@@ -103,6 +103,26 @@ f6f3c08995a607bf6217fcfe6d432a9c712b8962a0b785fe2ff03b56d808055e  data/T5.bin
 37c75a7aea19bd1dd885ec304c36ea165c02947d2575de829798dc03024ef5d7  data/W5.bin
 ```
 
+## Verification status
+
+This release has been independently audited and no discrepancies were found. The
+checks below are reproducible from this repository:
+
+- **Hashes and regeneration.** All `SHA256SUMS` entries verify, and `make regen-check`
+  rebuilds the state graphs `T`, `U`, `W` and every reflection block byte-for-byte
+  from source.
+- **Counts vs. brute force.** A separate enumeration independent of the transfer code
+  (Held-Karp on 5x4 via `bruteforce_5x4`, plus direct backtracking for wider boards)
+  reproduces the open counts `82, 864, 18784, 622868` for widths 4-7 and the closed
+  count `8` at width 6.
+- **Visible factor.** `e^T A^k beta (mod 101)` reproduces the closed-tour counts,
+  confirming that the eigenvalue `50` lives in the genuine closed denominator
+  (`make visible-check`).
+- **Multiplicity is two.** Each of the six nonsingularity / algebraic-simplicity
+  facts was re-confirmed by an independent Wiedemann / Berlekamp-Massey computation
+  over `F_(101^2)` with different random preconditioners, agreeing with the
+  checked-in certificates (`make rank-check`).
+
 ## Regenerate the certificates
 
 The checked-in certificates use seed `1`. Generation uses randomness only to *find*

@@ -1,0 +1,9 @@
+# Build artifacts (regenerable: `make all`, `make regen-check`)
+build/
+
+# macOS clutter
+.DS_Store
+**/.DS_Store
+
+# Local editor/harness config
+.claude/

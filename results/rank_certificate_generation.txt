@@ -1,0 +1,6 @@
+n 16832 degree 16832 constant 23+34t extra_bad 0 bm_sec 0.454467 seed 1
+n 16578 degree 16578 constant 56+31t extra_bad 0 bm_sec 0.421314 seed 1
+n 25617 degree 25617 constant 80+91t extra_bad 0 bm_sec 1.01346 seed 1
+n 25495 degree 25495 constant 89+57t extra_bad 0 bm_sec 0.998652 seed 1
+n 23646 degree 23646 constant 87+46t extra_bad 0 bm_sec 0.855248 seed 1
+n 23552 degree 23552 constant 16+38t extra_bad 0 bm_sec 0.84022 seed 1

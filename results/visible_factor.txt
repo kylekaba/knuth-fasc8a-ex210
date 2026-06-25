@@ -1,0 +1,2 @@
+PASS visible factor: degree(g)=4106, r_bare=67, v_bare=67, pivot=0, pivot_value=37
+Therefore 1-50z divides the reduced closed-tour denominator modulo 101.

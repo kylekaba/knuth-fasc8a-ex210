@@ -1,0 +1,8 @@
+Wrel_is_permutation_similar_to_Trel 1
+Trel_plus n 16831 nnz 522193 fnv1a64 f9447e753246d710
+Trel_minus n 16578 nnz 500744 fnv1a64 5a63021ce5b64189
+U1_plus n 25617 nnz 739872 fnv1a64 af7e0f16a320c0a9
+U1_minus n 25495 nnz 728285 fnv1a64 bff01883f31efff8
+U2_plus n 23646 nnz 875835 fnv1a64 48b4339fcf7f8bcb
+U2_minus n 23552 nnz 863226 fnv1a64 94a4c1c7984a9589
+Tall_plus n 18325 nnz 565237 fnv1a64 230ce828dfc9247

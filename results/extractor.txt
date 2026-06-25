@@ -1,0 +1,8 @@
+Trel_plus n=16831 nnz=522193
+Trel_minus n=16578 nnz=500744
+U1_plus n=25617 nnz=739872
+U1_minus n=25495 nnz=728285
+U2_plus n=23646 nnz=875835
+U2_minus n=23552 nnz=863226
+Tall_plus n=18325 nnz=565237 bare=0
+Trel/Wrel exact labeled equality verified

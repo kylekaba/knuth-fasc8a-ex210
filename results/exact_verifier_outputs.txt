@@ -1,0 +1,12 @@
+Exact deterministic checker outputs obtained from the supplied files:
+
+PASS visible factor: degree(g)=4106, r_bare=67, v_bare=67, pivot=0, pivot_value=37
+Therefore 1-50z divides the reduced closed-tour denominator modulo 101.
+
+PASS border certificate: n=16832, degree=16832, constant=23+34t, recurrence_bad=0
+PASS nonsingular certificate: n=16578, degree=16578, constant=56+31t, recurrence_bad=0
+
+The remaining four checked-in certificates have the full-degree/nonzero-constant
+construction outputs listed in rank_certificate_generation.txt.  The same
+independent verifier and commands are supplied in Makefile and
+scripts/verify_ranks_parallel.sh.

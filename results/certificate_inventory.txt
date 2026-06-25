@@ -1,0 +1,7 @@
+file | order | degree | constant | border | terms | sha256
+Trel_minus_shift50.kwc2 | 16578 | 16578 | 56+31t | 0 | 33188 | eec4d64aedb6aa679d0ff53fd64a02fce3e6764126cdcaecb2d34d771c697f38
+Trel_plus_border.kwc2 | 16832 | 16832 | 23+34t | 1 | 33696 | f9f7c2a40d13b3dff6c0a35ae5c0a3123b30b7d7e89ccedc52e73461920dd97a
+U1_minus_shift50.kwc2 | 25495 | 25495 | 89+57t | 0 | 51022 | c05347fe795621b5b17b92bb44f29828747dfcec9e620ccabcb45d7c64b65ed6
+U1_plus_shift50.kwc2 | 25617 | 25617 | 80+91t | 0 | 51266 | eed6892a2fce9d5c3b229b5d3c6a418fa32a72125a7fbd7d6f6813d88bd6b992
+U2_minus_shift50.kwc2 | 23552 | 23552 | 16+38t | 0 | 47136 | 0a9ecde164fd7a9fdc99e48576696d752bec017282e5a2ec7c29cd75ac917d7f
+U2_plus_shift50.kwc2 | 23646 | 23646 | 87+46t | 0 | 47324 | fed9c7c7ab70e7593d49a69ade95739d334bb23610c050e22e66751083053100

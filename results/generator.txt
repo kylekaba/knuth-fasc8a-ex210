@@ -1,0 +1,9 @@
+T states 36380 edges 1149818
+T SCC 2972 largest 33409 1 1 1 1
+U states 107444 edges 3566822
+U SCC 9136 largest 51112 47198 1 1 1
+W states 48973 edges 1395976
+W SCC 5331 largest 33409 10235 1 1 1
+W finish states 114 coreachable 33409
+singleton loops lambda50/51 T 0/0 U 0/0 W 0/0
+seconds 15.8837

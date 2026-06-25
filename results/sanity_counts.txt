@@ -1,0 +1,11 @@
+n=2 closed=0 open=0
+n=3 closed=0 open=0
+n=4 closed=0 open=82
+n=5 closed=0 open=864
+n=6 closed=8 open=18784
+n=7 closed=0 open=622868
+n=8 closed=44202 open=18061054
+n=9 closed=0 open=264895640
+n=10 closed=13311268 open=7886117822
+n=11 closed=0 open=128411926952
+n=12 closed=4557702762 open=3611823644006

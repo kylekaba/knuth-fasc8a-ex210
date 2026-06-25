@@ -4,7 +4,7 @@ A reproducible, computer-assisted **disproof** of a conjecture about knight's-to
 generating functions, with a concrete counterexample at board width **m = 5**.
 
 ## The problem
-
+![problem](Knuth-Fas-8A-Ex-210)
 For the knight's graph on an `m x n` board, let `S_{m,n}` count **closed** tours
 (Hamiltonian cycles) and `S^+_{m,n}` count **open** tours (Hamiltonian paths). For
 fixed `m` these are rational generating functions in `z` (the variable marking the

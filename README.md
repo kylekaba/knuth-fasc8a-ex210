@@ -1,7 +1,7 @@
 # Width-5 counterexample to a knight's-tour denominator conjecture
 
 A reproducible, computer-assisted **disproof** of a conjecture about knight's-tour
-generating functions, with a concrete counterexample at board width **m = 5**.
+generating functions, with a concrete counterexample at board width **m = 5**, assisted primarily by GPT-5.5 Pro.
 
 ## The problem
 ![problem](Knuth-Fas-8A-Ex-210.png)

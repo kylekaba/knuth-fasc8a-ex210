@@ -5,6 +5,7 @@ generating functions, with a concrete counterexample at board width **m = 5**.
 
 ## The problem
 ![problem](Knuth-Fas-8A-Ex-210.png)
+
 For the knight's graph on an `m x n` board, let `S_{m,n}` count **closed** tours
 (Hamiltonian cycles) and `S^+_{m,n}` count **open** tours (Hamiltonian paths). For
 fixed `m` these are rational generating functions in `z` (the variable marking the
@@ -15,8 +16,8 @@ S_m(z)   = sum_{n>=0} S_{m,n}   z^n = P_m(z)   / Q_m(z),
 S_m^+(z) = sum_{n>=0} S^+_{m,n} z^n = P_m^+(z) / Q_m^+(z).
 ```
 
-> **Exercise 210** (Donald E. Knuth, *The Art of Computer Programming*,
-> Volume 4, Fascicle 8A, rated HM46):
+> **Exercise 210** (Donald E. Knuth, [*The Art of Computer Programming, Volume 4, Fascicle 8A*](https://www-cs-faculty.stanford.edu/~knuth/fasc8a.pdf), rated HM46):
+>
 > *Prove or disprove that `Q_m^+(z)` is a multiple of `Q_m(z)^3` when `m >= 5`.*
 
 **This repository disproves it.** At `m = 5`, `Q_5^+(z)` is **not** divisible by

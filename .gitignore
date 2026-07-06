@@ -1,5 +1,6 @@
 # Build artifacts (regenerable: `make all`, `make regen-check`)
 build/
+.lake/
 
 # macOS clutter
 .DS_Store

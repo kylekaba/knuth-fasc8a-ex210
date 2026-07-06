@@ -96,6 +96,45 @@ A pass on all five steps establishes that `1 - 50z` divides `Q_5` modulo 101, th
 its multiplicity in the open-side transfer determinant is exactly two, and therefore
 that `Q_5^+` is not a multiple of `Q_5^3`.
 
+## Lean 4 verifier
+
+This repository also includes a Lean 4 project that checks the formal
+contradiction and independently verifies the checked-in binary certificate
+files.  See [LEAN.md](LEAN.md) for details.
+
+In brief, the Lean executable:
+
+- checks SHA-256 hashes, binary magic/version fields, matrix dimensions, CSR
+  structure, state-label tails, and FNV bindings;
+- fully replays the visible-factor certificate by computing `r = g(A^2) beta`,
+  checking the `76` and `50` eigenvector equations, and comparing against the
+  restricted `Trel_plus` eigenvector;
+- recomputes all `2N + 32` Wiedemann/Krylov moments from the actual sparse
+  matrices for all six rank certificates when run in full mode;
+- reruns Berlekamp--Massey over the first `2N` stored moments and checks that
+  the resulting full-degree connection polynomials match the stored
+  coefficients;
+- builds the formal Lean theorem
+  `KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility`, which proves
+  that the certified multiplicity facts contradict `Q_5(z)^3 | Q_5^+(z)`.
+
+Quick Lean check:
+
+```sh
+lake build
+lake build knuth_cert_check
+.lake/build/bin/knuth_cert_check
+```
+
+Full Lean certificate-file verification:
+
+```sh
+.lake/build/bin/knuth_cert_check . all all bm
+```
+
+The full Lean verifier is intentionally slower than the C++ checker because it
+recomputes the large sparse Krylov streams in Lean.
+
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 
 ```text
@@ -146,6 +185,8 @@ make certs-regenerate    # overwrites data/certs/*, then compare with sha256sum 
 | `src/verify_visible.cpp` | Deterministic check that `1 - 50z` is visible in the closed scalar denominator |
 | `src/wiedemann_ext.cpp` | Exact certificate generator over `F_(101^2)` |
 | `src/verify_rank_cert.cpp` | Independent exact certificate verifier |
+| `LEAN.md`, `KnuthFasc8aEx210/` | Lean 4 theorem and certificate-file verifier |
+| `lakefile.lean`, `lean-toolchain` | Pinned Lean/Lake project configuration |
 | `data/`, `results/`, `SHA256SUMS` | Matrices, certificates, captured outputs, and hashes |
 
 ## Binary formats

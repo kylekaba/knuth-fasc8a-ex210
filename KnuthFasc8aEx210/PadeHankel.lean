@@ -2,7 +2,11 @@ import Mathlib.Algebra.Polynomial.Coeff
 import Mathlib.Algebra.Polynomial.Degree.Operations
 import Mathlib.Algebra.Polynomial.Monic
 import Mathlib.Algebra.Polynomial.OfFn
+import Mathlib.Algebra.Polynomial.Reverse
+import Mathlib.Data.Fin.Rev
+import Mathlib.LinearAlgebra.Matrix.ToLin
 import Mathlib.RingTheory.Coprime.Basic
+import KnuthFasc8aEx210.KrylovNonsingularity
 
 /-!
 # Padé/Bézout certificates for Hankel nonsingularity
@@ -113,6 +117,184 @@ theorem coeffEqBelow_truncate_of_middle_zero (p : K[X]) (base precision : ℕ)
   · rw [middle_zero k (Nat.le_of_not_gt below) k_lt,
       truncatePolynomial_coeff_of_le p (Nat.le_of_not_gt below)]
 
+/-- Polynomial containing the first `terms` scalar moments. -/
+def momentPolynomial (moment : ℕ → K) (terms : ℕ) : K[X] :=
+  ofFn terms fun i => moment i
+
+@[simp]
+theorem momentPolynomial_coeff_of_lt (moment : ℕ → K) {terms k : ℕ}
+    (k_lt : k < terms) :
+    (momentPolynomial moment terms).coeff k = moment k := by
+  simp [momentPolynomial, k_lt]
+
+@[simp]
+theorem momentPolynomial_coeff_of_le (moment : ℕ → K) {terms k : ℕ}
+    (terms_le : terms ≤ k) :
+    (momentPolynomial moment terms).coeff k = 0 := by
+  exact ofFn_coeff_eq_zero_of_ge _ terms_le
+
+/-- The Padé denominator uses the certificate's stored order directly:
+`[1,c₁,...,c_N]` is the ascending coefficient vector of `D`. -/
+def certificateDenominator (degree : ℕ) (coefficient : ℕ → K) : K[X] :=
+  ofFn (degree + 1) fun i => coefficient i
+
+@[simp]
+theorem certificateDenominator_coeff_of_le (degree : ℕ) (coefficient : ℕ → K)
+    {i : ℕ} (i_le : i ≤ degree) :
+    (certificateDenominator degree coefficient).coeff i = coefficient i := by
+  simp [certificateDenominator, Nat.lt_succ_of_le i_le]
+
+theorem certificateDenominator_natDegree_eq (degree : ℕ) (coefficient : ℕ → K)
+    (last_ne_zero : coefficient degree ≠ 0) :
+    (certificateDenominator degree coefficient).natDegree = degree := by
+  apply natDegree_eq_of_le_of_coeff_ne_zero
+  · exact Nat.lt_succ_iff.mp (ofFn_natDegree_lt (by omega) _)
+  · simpa using last_ne_zero
+
+/-- Coefficients in the recurrence window of `S*D` are exactly the stored
+descending recurrence sums. -/
+theorem coeff_momentPolynomial_mul_certificateDenominator
+    (moment : ℕ → K) (degree : ℕ) (coefficient : ℕ → K) (row : Fin degree) :
+    (momentPolynomial moment (2 * degree) *
+        certificateDenominator degree coefficient).coeff (degree + row) =
+      ∑ i ∈ Finset.range (degree + 1),
+        coefficient (degree - i) * moment (row + i) := by
+  let total := degree + row.val
+  rw [mul_comm, coeff_mul, Finset.Nat.sum_antidiagonal_eq_sum_range_succ_mk]
+  change (∑ i ∈ Finset.range (total + 1),
+      (certificateDenominator degree coefficient).coeff i *
+        (momentPolynomial moment (2 * degree)).coeff (total - i)) = _
+  have range_subset : Finset.range (degree + 1) ⊆ Finset.range (total + 1) :=
+    Finset.range_mono (by dsimp [total]; omega)
+  rw [← Finset.sum_subset range_subset]
+  · rw [← Fin.sum_univ_eq_sum_range]
+    rw [← Equiv.sum_comp Fin.revPerm]
+    rw [← Fin.sum_univ_eq_sum_range]
+    apply Fintype.sum_congr
+    intro i
+    have reverse_value : (Fin.revPerm i).val = degree - i.val := by
+      simp only [Fin.revPerm_apply, Fin.val_rev]
+      omega
+    have moment_index : total - (Fin.revPerm i).val = row.val + i.val := by
+      dsimp [total]
+      rw [reverse_value]
+      omega
+    have moment_index' : total - (degree - i.val) = row.val + i.val := by
+      rw [← reverse_value]
+      exact moment_index
+    rw [certificateDenominator_coeff_of_le]
+    · rw [momentPolynomial_coeff_of_lt]
+      · rw [reverse_value, moment_index']
+      · rw [moment_index]
+        omega
+    · omega
+  · intro i i_mem i_not_mem
+    have degree_lt : degree < i := by
+      simpa [Finset.mem_range, not_lt] using i_not_mem
+    rw [certificateDenominator,
+      ofFn_coeff_eq_zero_of_ge (fun j : Fin (degree + 1) => coefficient j)
+        (by omega), zero_mul]
+
+/-- Encode a vector as a polynomial in ascending coordinate order. -/
+def vectorPolynomial (degree : ℕ) (v : Fin degree → K) : K[X] :=
+  ofFn degree v
+
+/-- Reverse a vector polynomial around the fixed index `degree - 1`. -/
+def reversedVectorPolynomial (degree : ℕ) (v : Fin degree → K) : K[X] :=
+  (vectorPolynomial degree v).reflect (degree - 1)
+
+theorem reversedVectorPolynomial_natDegree_lt {degree : ℕ} (degree_pos : 0 < degree)
+    (v : Fin degree → K) :
+    (reversedVectorPolynomial degree v).natDegree < degree := by
+  have vector_degree : (vectorPolynomial degree v).natDegree < degree := by
+    exact ofFn_natDegree_lt degree_pos _
+  calc
+    (reversedVectorPolynomial degree v).natDegree ≤
+        max (degree - 1) (vectorPolynomial degree v).natDegree :=
+      natDegree_reflect_le
+    _ < degree := by omega
+
+theorem reversedVectorPolynomial_eq_zero_iff {degree : ℕ} (v : Fin degree → K) :
+    reversedVectorPolynomial degree v = 0 ↔ v = 0 := by
+  rw [reversedVectorPolynomial, reflect_eq_zero_iff]
+  constructor
+  · intro vector_zero
+    apply Polynomial.injective_ofFn degree
+    simpa [vectorPolynomial] using vector_zero
+  · rintro rfl
+    simp [vectorPolynomial]
+
+theorem reversedVectorPolynomial_coeff_of_le {degree i : ℕ}
+    (degree_pos : 0 < degree) (v : Fin degree → K) (degree_le : degree ≤ i) :
+    (reversedVectorPolynomial degree v).coeff i = 0 := by
+  rw [reversedVectorPolynomial, coeff_reflect]
+  rw [revAt_eq_self_of_lt (by omega)]
+  exact ofFn_coeff_eq_zero_of_ge _ degree_le
+
+/-- The middle coefficient of the moment polynomial times a reversed vector
+is exactly the corresponding Hankel matrix row. -/
+theorem coeff_momentPolynomial_mul_reversedVectorPolynomial
+    (moment : ℕ → K) {degree : ℕ} (degree_pos : 0 < degree)
+    (v : Fin degree → K) (row : Fin degree) :
+    (momentPolynomial moment (2 * degree) *
+        reversedVectorPolynomial degree v).coeff (degree - 1 + row) =
+      ∑ j : Fin degree, moment (row + j) * v j := by
+  let total := degree - 1 + row.val
+  rw [mul_comm, coeff_mul, Finset.Nat.sum_antidiagonal_eq_sum_range_succ_mk]
+  change (∑ i ∈ Finset.range (total + 1),
+      (reversedVectorPolynomial degree v).coeff i *
+        (momentPolynomial moment (2 * degree)).coeff (total - i)) = _
+  have range_subset : Finset.range degree ⊆ Finset.range (total + 1) :=
+    Finset.range_mono (by dsimp [total]; omega)
+  rw [← Finset.sum_subset range_subset]
+  · rw [← Fin.sum_univ_eq_sum_range]
+    rw [← Equiv.sum_comp Fin.revPerm]
+    apply Fintype.sum_congr
+    intro i
+    have reverse_index : degree - 1 - (Fin.revPerm i).val = i.val := by
+      simp only [Fin.revPerm_apply, Fin.val_rev]
+      omega
+    have moment_index : total - (Fin.revPerm i).val = row.val + i.val := by
+      dsimp [total]
+      simp only [Fin.revPerm_apply, Fin.val_rev]
+      omega
+    rw [reversedVectorPolynomial, coeff_reflect]
+    rw [revAt_le (by omega)]
+    rw [vectorPolynomial,
+      Polynomial.ofFn_coeff_eq_val_of_lt v (by omega)]
+    have fin_index :
+        (⟨degree - 1 - (Fin.revPerm i).val, by omega⟩ : Fin degree) = i := by
+      exact Fin.ext reverse_index
+    rw [fin_index]
+    rw [momentPolynomial_coeff_of_lt]
+    · rw [mul_comm]
+      rw [moment_index]
+    · dsimp [total]
+      simp only [Fin.revPerm_apply, Fin.val_rev]
+      omega
+  · intro i i_mem i_not_mem
+    have degree_le : degree ≤ i := by
+      simpa [Finset.mem_range, not_lt] using i_not_mem
+    rw [reversedVectorPolynomial_coeff_of_le degree_pos v degree_le, zero_mul]
+
+theorem middle_coeff_zero_of_hankel_kernel
+    (moment : ℕ → K) {degree : ℕ} (degree_pos : 0 < degree)
+    (v : Fin degree → K)
+    (kernel : Matrix.toLin' (momentHankelMatrix moment degree) v = 0) :
+    ∀ k, degree - 1 ≤ k → k < 2 * degree - 1 →
+      (momentPolynomial moment (2 * degree) *
+        reversedVectorPolynomial degree v).coeff k = 0 := by
+  intro k lower upper
+  let row : Fin degree := ⟨k - (degree - 1), by omega⟩
+  have row_zero := congrFun kernel row
+  rw [Matrix.toLin'_apply] at row_zero
+  have row_sum_zero : (∑ j : Fin degree, moment (row + j) * v j) = 0 := by
+    simpa [momentHankelMatrix, Matrix.mulVec, dotProduct] using row_zero
+  rw [show k = degree - 1 + row.val by dsimp [row]; omega]
+  rw [coeff_momentPolynomial_mul_reversedVectorPolynomial
+    moment degree_pos v row]
+  exact row_sum_zero
+
 /-- Polynomial heart of the Padé argument.  The two congruences say that the
 same truncated series has denominator/numerator pair `(D,R)` and a putative
 shorter pair `(E,Q)`.  Coprimality of `D,R` forces `D ∣ E`; if `E` has lower
@@ -124,7 +306,7 @@ theorem shorter_pade_denominator_eq_zero
     (SE_Q : CoeffEqBelow (S * E) Q precision)
     (RE_degree : (R * E).natDegree < precision)
     (QD_degree : (Q * D).natDegree < precision)
-    (D_monic : D.Monic) (D_degree : D.natDegree = degree)
+    (D_degree : D.natDegree = degree)
     (E_degree : E.natDegree < degree)
     (coprime : IsCoprime D R) :
     E = 0 := by
@@ -142,7 +324,7 @@ theorem shorter_pade_denominator_eq_zero
     simpa [mul_comm] using products_equal
   have D_dvd_E : D ∣ E := coprime.dvd_of_dvd_mul_left D_dvd_RE
   by_contra E_ne_zero
-  exact (Polynomial.Monic.not_dvd_of_natDegree_lt D_monic E_ne_zero
+  exact (Polynomial.not_dvd_of_natDegree_lt E_ne_zero
     (by simpa [D_degree] using E_degree)) D_dvd_E
 
 /-- Certificate-oriented Padé theorem.  `R` and `Q` are not trusted inputs:
@@ -152,7 +334,7 @@ Bézout identity certifies coprimality. -/
 theorem shorter_denominator_eq_zero_of_bezout
     {S D E U V : K[X]} {degree : ℕ}
     (degree_gt_one : 1 < degree)
-    (D_monic : D.Monic) (D_degree : D.natDegree = degree)
+    (D_degree : D.natDegree = degree)
     (E_degree : E.natDegree < degree)
     (SD_middle_zero : ∀ k, degree ≤ k → k < 2 * degree →
       (S * D).coeff k = 0)
@@ -184,10 +366,79 @@ theorem shorter_denominator_eq_zero_of_bezout
       (2 * degree - 1) SE_middle_zero
   · exact RE_degree
   · exact QD_degree
-  · exact D_monic
   · exact D_degree
   · exact E_degree
   · exact ⟨U, V, by simpa [R] using bezout⟩
+
+/-- A checked Padé/Bézout identity plus the stored full recurrence proves the
+moment Hankel matrix injective. -/
+theorem hankel_injective_of_bezout
+    (moment : ℕ → K) {degree : ℕ} (degree_gt_one : 1 < degree)
+    {D U V : K[X]}
+    (D_degree : D.natDegree = degree)
+    (recurrence_middle_zero : ∀ k, degree ≤ k → k < 2 * degree →
+      (momentPolynomial moment (2 * degree) * D).coeff k = 0)
+    (bezout : U * D +
+      V * truncatePolynomial degree
+        (momentPolynomial moment (2 * degree) * D) = 1) :
+    Function.Injective (Matrix.toLin' (momentHankelMatrix moment degree)) := by
+  have kernel_vector_zero : ∀ v : Fin degree → K,
+      Matrix.toLin' (momentHankelMatrix moment degree) v = 0 → v = 0 := by
+    intro v kernel
+    let E := reversedVectorPolynomial degree v
+    have E_degree : E.natDegree < degree :=
+      reversedVectorPolynomial_natDegree_lt (by omega) v
+    have E_zero : E = 0 := by
+      apply shorter_denominator_eq_zero_of_bezout
+        (S := momentPolynomial moment (2 * degree)) (D := D)
+        (E := E) (U := U) (V := V) degree_gt_one D_degree E_degree
+      · exact recurrence_middle_zero
+      · exact middle_coeff_zero_of_hankel_kernel moment (by omega) v kernel
+      · exact bezout
+    exact (reversedVectorPolynomial_eq_zero_iff v).mp E_zero
+  intro x y same_image
+  apply sub_eq_zero.mp
+  apply kernel_vector_zero (x - y)
+  rw [map_sub, same_image, sub_self]
+
+/-- End-to-end algebraic rank-certificate interface.  It consumes the stored
+moment recurrence, its nonzero constant coefficient, and a checked Bézout
+identity, then proves the represented endomorphism nonsingular. -/
+theorem injective_of_padeBezout_descendingConnection
+    {W : Type*} [AddCommGroup W] [Module K W] [FiniteDimensional K W]
+    (u : W →ₗ[K] K) (A : Module.End K W) (w : W) (degree : ℕ)
+    (degree_gt_one : 1 < degree)
+    (dimension : Module.finrank K W = degree)
+    (coefficient : ℕ → K) (leading : coefficient 0 = 1)
+    (recurrence : ∀ k < degree,
+      ∑ i ∈ Finset.range (degree + 1),
+        coefficient (degree - i) * scalarKrylovMoment u A w (k + i) = 0)
+    (constant_ne_zero : coefficient degree ≠ 0)
+    (U V : K[X])
+    (bezout : U * certificateDenominator degree coefficient +
+      V * truncatePolynomial degree
+        (momentPolynomial (scalarKrylovMoment u A w) (2 * degree) *
+          certificateDenominator degree coefficient) = 1) :
+    Function.Injective A := by
+  have denominator_degree :
+      (certificateDenominator degree coefficient).natDegree = degree :=
+    certificateDenominator_natDegree_eq degree coefficient constant_ne_zero
+  have recurrence_middle_zero : ∀ k, degree ≤ k → k < 2 * degree →
+      (momentPolynomial (scalarKrylovMoment u A w) (2 * degree) *
+        certificateDenominator degree coefficient).coeff k = 0 := by
+    intro k lower upper
+    let row : Fin degree := ⟨k - degree, by omega⟩
+    rw [show k = degree + row.val by dsimp [row]; omega]
+    rw [coeff_momentPolynomial_mul_certificateDenominator]
+    exact recurrence row row.isLt
+  have hankel_injective : Function.Injective
+      (Matrix.toLin'
+        (momentHankelMatrix (scalarKrylovMoment u A w) degree)) :=
+    hankel_injective_of_bezout (scalarKrylovMoment u A w) degree_gt_one
+      denominator_degree recurrence_middle_zero bezout
+  exact injective_of_hankel_and_descendingConnection
+    u A w degree (by omega) dimension hankel_injective coefficient leading
+    recurrence constant_ne_zero
 
 end
 

@@ -461,9 +461,8 @@ theorem RankCertificateFile.fieldMoment_eq_normalKrylovMoment_of_orbit
   rw [RankCertificateFile.fieldMoment, stored_match]
   exact normalKrylovMoment_of_orbit orbit orbit_zero step columns_valid k
 
-/-- All mathematical pieces of a normal rank certificate, assembled.  The
-remaining executable bridge is to obtain `orbit`, `stored_match`, and the full
-stored recurrence from zero checker mismatch counts. -/
+/-- All mathematical pieces of a normal rank certificate, assembled from an
+explicit replay orbit and stored recurrence. -/
 theorem PadeWitnessFile.injective_normal_of_checked_orbit
     (witness : PadeWitnessFile) (cert : RankCertificateFile)
     {matrixBytes : ByteArray} {header : MatrixHeader}
@@ -514,6 +513,40 @@ theorem PadeWitnessFile.injective_normal_of_checked_orbit
   exact witness.injective_of_checked_pade cert u A w degree_gt_one dimension
     bm_terms u_length_le v_length_le no_bad moment_match leading recurrence
     constant_ne_zero
+
+/-- A normal certificate with no full-recurrence mismatches proves the
+preconditioned shifted CSR operator injective.  Only the replay orbit and its
+agreement with the stored moments remain as executable bridge premises. -/
+theorem PadeWitnessFile.injective_normal_of_checked_full_recurrence
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray} (orbit : ℕ → ByteArray)
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (full_recurrence_bad : cert.fullRecurrenceBad = 0)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header none dR dL (orbit k)
+      header.n = .ok (orbit (k + 1)))
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n)
+    (stored_match : ∀ k < 2 * cert.degree, pairAt cert.moments k =
+      extDotBytes probe (orbit k) header.n) :
+    Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL) := by
+  apply witness.injective_normal_of_checked_orbit cert orbit degree_gt_one
+    degree_eq bm_terms u_length_le v_length_le no_bad leading constant_ne_zero
+    orbit_zero step columns_valid stored_match
+  exact cert.stored_recurrence_of_fullRecurrenceBad_eq_zero bm_terms bm_terms_le
+    full_recurrence_bad
 
 end
 

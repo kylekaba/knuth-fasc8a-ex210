@@ -284,6 +284,10 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   if recurrenceBad != 0 then
     throw <| IO.userError
       s!"extra recurrence check failed for {e.cert}: {recurrenceBad} bad moments"
+  let fullRecurrenceBad := cert.fullRecurrenceBad
+  if fullRecurrenceBad != 0 then
+    throw <| IO.userError
+      s!"full recurrence check failed for {e.cert}: {fullRecurrenceBad} bad moments"
   let padeBezoutBad := pade.bezoutBad cert
   if padeBezoutBad != 0 then
     throw <| IO.userError
@@ -348,7 +352,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then

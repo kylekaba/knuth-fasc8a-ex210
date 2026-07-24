@@ -124,6 +124,94 @@ theorem RankCertificateFile.storedMomentPolynomial_eq
     momentPolynomial, RankCertificateFile.fieldMoment]
   rw [bm_terms]
 
+/-- The checked recurrence coefficient is the corresponding coefficient of
+the interpreted denominator/moment product. -/
+theorem RankCertificateFile.recurrenceCoefficient_toCertificateField
+    (cert : RankCertificateFile) (n : ℕ) :
+    (cert.recurrenceCoefficient n).toCertificateField =
+      (cert.denominatorPolynomial *
+        encodedPolynomial (pairAt cert.moments) cert.terms).coeff n := by
+  exact extConvolutionCoefficient_eq_coeff_mul _ _ _ _ _
+
+/-- A zero full-recurrence mismatch count forces every tested encoded
+coefficient to pass the executable zero test. -/
+theorem RankCertificateFile.recurrenceCoefficient_isZero_of_fullRecurrenceBad_eq_zero
+    (cert : RankCertificateFile) (no_bad : cert.fullRecurrenceBad = 0)
+    {offset : ℕ} (offset_lt : offset < cert.bmTerms - cert.degree) :
+    (cert.recurrenceCoefficient (cert.degree + offset)).isZero = true := by
+  rw [RankCertificateFile.fullRecurrenceBad] at no_bad
+  have filtered_nil := List.length_eq_zero_iff.mp no_bad
+  by_contra mismatch
+  have zero_test_false :
+      (cert.recurrenceCoefficient (cert.degree + offset)).isZero = false :=
+    Bool.eq_false_of_not_eq_true mismatch
+  have bad_mem : offset ∈
+      (List.range (cert.bmTerms - cert.degree)).filter (fun i =>
+        (cert.recurrenceCoefficient (cert.degree + i)).isZero != true) := by
+    simp [offset_lt, zero_test_false]
+  rw [filtered_nil] at bad_mem
+  simp at bad_mem
+
+/-- A checked recurrence coefficient is zero in the mathematical extension
+field.  Canonicality is supplied by the modular convolution implementation. -/
+theorem RankCertificateFile.recurrenceCoefficient_toCertificateField_eq_zero
+    (cert : RankCertificateFile) (no_bad : cert.fullRecurrenceBad = 0)
+    {offset : ℕ} (offset_lt : offset < cert.bmTerms - cert.degree) :
+    (cert.recurrenceCoefficient (cert.degree + offset)).toCertificateField = 0 := by
+  apply (ExtElt.toCertificateField_eq_zero_iff _
+    (ExtElt.isCanonical_extConvolutionCoefficient _ _ _ _ _)).2
+  exact cert.recurrenceCoefficient_isZero_of_fullRecurrenceBad_eq_zero
+    no_bad offset_lt
+
+/-- The exact all-rows executable check supplies the stored descending
+recurrence premise expected by the Padé/Krylov injectivity proof. -/
+theorem RankCertificateFile.stored_recurrence_of_fullRecurrenceBad_eq_zero
+    (cert : RankCertificateFile)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (no_bad : cert.fullRecurrenceBad = 0) :
+    ∀ k < cert.degree,
+      ∑ i ∈ Finset.range (cert.degree + 1),
+        cert.fieldCoefficient (cert.degree - i) * cert.fieldMoment (k + i) = 0 := by
+  intro k k_lt
+  have encoded_below :
+      CoeffEqBelow (encodedPolynomial (pairAt cert.moments) cert.terms)
+        (momentPolynomial cert.fieldMoment (2 * cert.degree))
+        (2 * cert.degree) := by
+    intro j j_lt
+    rw [encodedPolynomial_coeff_of_lt _
+      (j_lt.trans_le (bm_terms ▸ bm_terms_le)),
+      momentPolynomial_coeff_of_lt _ j_lt]
+    rfl
+  have products_below := encoded_below.mul_left cert.denominatorPolynomial
+  have offset_lt : k < cert.bmTerms - cert.degree := by
+    omega
+  have checked_zero :
+      (cert.denominatorPolynomial *
+        encodedPolynomial (pairAt cert.moments) cert.terms).coeff
+          (cert.degree + k) = 0 := by
+    rw [← cert.recurrenceCoefficient_toCertificateField]
+    exact cert.recurrenceCoefficient_toCertificateField_eq_zero no_bad offset_lt
+  let row : Fin cert.degree := ⟨k, k_lt⟩
+  calc
+    (∑ i ∈ Finset.range (cert.degree + 1),
+        cert.fieldCoefficient (cert.degree - i) * cert.fieldMoment (k + i)) =
+        (momentPolynomial cert.fieldMoment (2 * cert.degree) *
+          certificateDenominator cert.degree cert.fieldCoefficient).coeff
+            (cert.degree + row) := by
+              symm
+              exact coeff_momentPolynomial_mul_certificateDenominator
+                cert.fieldMoment cert.degree cert.fieldCoefficient row
+    _ = (cert.denominatorPolynomial *
+          momentPolynomial cert.fieldMoment (2 * cert.degree)).coeff
+            (cert.degree + k) := by
+              simp [row, cert.denominatorPolynomial_eq, mul_comm]
+    _ = (cert.denominatorPolynomial *
+          encodedPolynomial (pairAt cert.moments) cert.terms).coeff
+            (cert.degree + k) := by
+              exact (products_below (cert.degree + k) (by omega)).symm
+    _ = 0 := checked_zero
+
 /-- One executable Bézout coefficient is the matching coefficient of the
 interpreted polynomial expression. -/
 theorem PadeWitnessFile.bezoutCoefficient_toCertificateField

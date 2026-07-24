@@ -52,6 +52,10 @@ this repository checkout and checks:
   polynomial exactly matches the stored coefficients;
 * the first 32 stored recurrence positions inside the Berlekamp--Massey input
   window for each rank certificate;
+* on every run, every one of the `N` recurrence positions in the full
+  Berlekamp--Massey input window; the proof layer turns a zero mismatch count
+  for this check into the exact recurrence identity used by the Padé/Krylov
+  nonsingularity theorem;
 * the 32 stored post-Berlekamp--Massey recurrence-check moments in each rank
   certificate, over `F_101[t]/(t^2 - 2)`;
 * the splitmix64 seed expansion used by the upstream rank verifier to generate
@@ -125,7 +129,7 @@ Expected output includes:
 ```text
 PASS Lean parse visible files: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, visible_prefix_steps=2, visible_prefix_bare=0, eig_n=16831, pivot=0, pivot_value=37, sha256=ok
 PASS Lean full visible factor: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, r_bare=67, v_bare=67, eigen76_bad=0, eigen50_bad=0, restricted_mismatch=0, pivot=0, pivot_value=37, sha256=ok
-PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, pade_bezout_bad=0, eigen_residual_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
+PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, full_recurrence_bad=0, pade_bezout_bad=0, eigen_residual_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
 ...
 Lean certificate-file checks completed.
 ```
@@ -153,8 +157,9 @@ There are two deliberately separate layers:
    endomorphisms for the normal rank certificates, and each encoded normal
    CSR row is proved to evaluate to the corresponding shifted-operator row.
    Successful bytewise diagonal multiplication and full Krylov steps preserve
-   this interpretation; a checked normal orbit plus stored recurrence now
-   composes directly with the Padé witness to prove operator injectivity.
+   this interpretation. A checked normal orbit, its stored moment matches, and
+   a zero full-recurrence mismatch count now compose directly with the Padé
+   witness to prove operator injectivity.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -170,10 +175,12 @@ The certificate-to-nonsingularity bridge is:
 
 ```lean
 KnuthFasc8aEx210.PadeWitnessFile.injective_of_checked_pade
+KnuthFasc8aEx210.PadeWitnessFile.injective_normal_of_checked_full_recurrence
 ```
 
-Its remaining computational premise is equality between the stored moments
-and the scalar Krylov moments of the represented matrix operator.
+The normal-certificate theorem's remaining computational premises describe a
+successful byte replay orbit, equality of its dot products with the stored
+moments, and valid CSR column indices.
 
 Main theorem:
 

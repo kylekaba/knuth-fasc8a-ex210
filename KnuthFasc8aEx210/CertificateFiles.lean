@@ -1167,6 +1167,29 @@ moment must satisfy the stored full-degree connection polynomial.
 def RankCertificateFile.extraRecurrenceBad (cert : RankCertificateFile) : Nat :=
   cert.recurrenceBadInRange cert.bmTerms cert.terms
 
+def RankCertificateFile.recurrenceCoefficient
+    (cert : RankCertificateFile) (n : Nat) : ExtElt :=
+  extConvolutionCoefficient
+    (pairAt cert.coefficients) (cert.degree + 1)
+    (pairAt cert.moments) cert.terms n
+
+private unsafe def RankCertificateFile.fullRecurrenceBadFast
+    (cert : RankCertificateFile) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for n in [cert.degree:cert.bmTerms] do
+      if (cert.recurrenceCoefficient n).isZero != true then
+        bad := bad + 1
+    pure bad
+
+/-- Every middle coefficient of the stored moment/denominator product must
+vanish.  Unlike the 32-position smoke checks, this is the full recurrence
+premise consumed by the Padé proof. -/
+@[implemented_by RankCertificateFile.fullRecurrenceBadFast]
+def RankCertificateFile.fullRecurrenceBad (cert : RankCertificateFile) : Nat :=
+  ((List.range (cert.bmTerms - cert.degree)).filter fun offset =>
+    (cert.recurrenceCoefficient (cert.degree + offset)).isZero != true).length
+
 def RankCertificateFile.connectionLeadingCoefficient (cert : RankCertificateFile) :
     ExtElt :=
   pairAt cert.coefficients 0

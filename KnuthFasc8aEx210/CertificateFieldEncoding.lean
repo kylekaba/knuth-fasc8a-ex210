@@ -221,6 +221,13 @@ theorem extConvolutionCoefficient_toCertificateField
       certificatePair_mul]
   · simp
 
+theorem ExtElt.isCanonical_extConvolutionCoefficient
+    (left : ℕ → ExtElt) (leftLength : ℕ)
+    (right : ℕ → ExtElt) (rightLength k : ℕ) :
+    (extConvolutionCoefficient left leftLength right rightLength k).IsCanonical := by
+  simp only [extConvolutionCoefficient, ExtElt.IsCanonical]
+  constructor <;> rw [toNat_u8Mod101] <;> exact Nat.mod_lt _ (by omega)
+
 @[simp]
 theorem ExtElt.toCertificateField_scale (c : ℕ) (x : ExtElt) :
     (x.scale c).toCertificateField =

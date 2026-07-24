@@ -1,8 +1,9 @@
 # Lean 4 verifier for Knuth Fascicle 8A, Exercise 210
 
-This repository contains a Lean 4 formalization of the logical core of the
-width-5 counterexample and a Lean executable that independently checks the
-checked-in certificate files.
+This repository contains a Lean 4/Mathlib formalization of the algebraic core
+of the width-5 counterexample and a Lean executable that independently checks
+the checked-in certificate files. Mathlib is pinned to the release matching the
+repository's Lean toolchain.
 
 The large repository checkers establish the external certificate facts for the
 factor `1 - 50 z` modulo `101`:
@@ -11,9 +12,15 @@ factor `1 - 50 z` modulo `101`:
 * the open-side transfer determinant has exactly two copies;
 * the open denominator divides that transfer determinant.
 
-Lean proves that these facts contradict the proposed divisibility
-`Q_5(z)^3 | Q_5^+(z)`, and therefore disprove the universal claim for
-all `m >= 5`.
+Lean represents the normalized denominators as polynomials in `Z[X]`, states
+the proposed divisibility in `Q[X]`, uses Gauss's lemma to return to `Z[X]`,
+and then reduces coefficients into `(ZMod 101)[X]`. It proves that the three
+certificate facts contradict `Q_5(z)^3 | Q_5^+(z)`, and therefore disprove the
+universal claim for all `m >= 5`.
+
+The bordered-matrix argument from `PROOF.md` is also formalized: if the
+bordered operator `[H v; phi 0]` is injective, `H v = 0`, and `phi v != 0`,
+then `ker(H) = span(v)` and `v` is not in the range of `H`.
 
 Type-check the Lean library (this does not run the certificate checker):
 
@@ -126,15 +133,20 @@ certificates.
 
 There are two deliberately separate layers:
 
-1. Lean's kernel checks the generic theorem that the three fields of a
-   `WidthFiveCertificate` contradict cubic divisibility.
+1. Lean's kernel checks the concrete polynomial argument, including
+   constant-term-one primitiveness, Gauss's lemma, coefficient reduction,
+   the `1 - 50X` multiplicity obstruction, and the bordered-matrix kernel/range
+   lemma.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
 The executable reports a runtime success value; it does not construct a
 kernel-checked inhabitant of `WidthFiveCertificate`. Consequently, this project
 provides a Lean-implemented certificate verifier and a kernel-checked logical
-core, but not a single end-to-end kernel theorem derived from the binary files.
+and algebraic core, but not a single end-to-end kernel theorem derived from the
+binary files. The transfer decomposition, its denominator interpretation, and
+the conversion of runtime matrix checks into polynomial multiplicity proof
+terms remain on the external side of the boundary.
 
 Main theorem:
 
@@ -142,8 +154,9 @@ Main theorem:
 KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility
 ```
 
-The reusable multiplicity obstruction is:
+The bordered-matrix conclusions are:
 
 ```lean
-KnuthFasc8aEx210.not_pow_divides_of_multiplicity
+KnuthFasc8aEx210.ker_eq_span_of_bordered_injective
+KnuthFasc8aEx210.not_mem_range_of_bordered_injective
 ```

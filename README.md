@@ -116,7 +116,12 @@ In brief, the Lean executable:
   coefficients;
 - builds the formal Lean theorem
   `KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility`, which proves
-  that the certified multiplicity facts contradict `Q_5(z)^3 | Q_5^+(z)`.
+  over actual polynomial rings that the certified multiplicity facts contradict
+  `Q_5(z)^3 | Q_5^+(z)` in `Q[z]`. The proof uses Mathlib's Gauss lemma to pass
+  through `Z[z]` and then reduces coefficients into `(ZMod 101)[z]`;
+- formalizes the bordered-matrix lemma used to establish algebraic simplicity:
+  bordered injectivity implies `ker(H) = span(v)` and `v` is not in the range
+  of `H`.
 
 Type-check the Lean proof and run the quick certificate smoke check:
 
@@ -138,12 +143,15 @@ Full Lean certificate-file verification:
 The full Lean verifier is intentionally slower than the C++ checker because it
 recomputes the large sparse Krylov streams in Lean.
 
-The formal theorem and executable checker have an explicit trust boundary. Lean's
-kernel checks that any value satisfying `WidthFiveCertificate` rules out cubic
-divisibility. Separately, the `IO` executable replays the binary certificates and
-reports success or failure; it does not turn that runtime result into a
-`WidthFiveCertificate` proof term. Thus this is a Lean-implemented certificate
-verifier plus a kernel-checked logical core, not a single end-to-end kernel proof
+The formal theorem and executable checker have an explicit trust boundary.
+Lean's kernel checks the polynomial argument over `Q[z]`, Gauss's lemma over
+`Z[z]`, reduction modulo 101, factor multiplicity, and the bordered-matrix
+kernel/range lemma. Separately, the `IO` executable replays the binary
+certificates and reports success or failure; it does not turn that runtime
+result into a `WidthFiveCertificate` proof term. The transfer construction and
+its connection to the normalized denominator polynomials also remain outside
+the kernel theorem. Thus this is a Lean-implemented certificate verifier plus a
+substantial kernel-checked algebraic core, not a single end-to-end kernel proof
 from the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):

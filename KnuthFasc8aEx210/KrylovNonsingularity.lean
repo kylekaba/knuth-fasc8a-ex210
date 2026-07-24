@@ -55,6 +55,57 @@ def HasMomentLinearComplexity (moment : ℕ → K) (shifts degree : ℕ) : Prop 
       ∑ i ∈ Finset.range (p.natDegree + 1), p.coeff i * moment (k + i) = 0) →
     p ≠ 0 → degree ≤ p.natDegree
 
+/-- The square Hankel matrix of the first `2 * degree - 1` moments. -/
+def momentHankelMatrix (moment : ℕ → K) (degree : ℕ) :
+    Matrix (Fin degree) (Fin degree) K :=
+  fun i j => moment (i + j)
+
+/-- Injectivity of the square Hankel moment matrix rules out every recurrence
+of degree below its order.  This is a compact linear-algebra target for a
+future soundness theorem about the concrete BM replay. -/
+theorem hasMomentLinearComplexity_of_hankel_injective
+    (moment : ℕ → K) (degree : ℕ)
+    (hankel_injective : Function.Injective
+      (Matrix.toLin' (momentHankelMatrix moment degree))) :
+    HasMomentLinearComplexity moment degree degree := by
+  intro p recurrence p_ne_zero
+  by_contra degree_not_le
+  have p_degree_lt : p.natDegree < degree := Nat.lt_of_not_ge degree_not_le
+  let coefficients : Fin degree → K := fun j => p.coeff j
+  have hankel_zero :
+      Matrix.toLin' (momentHankelMatrix moment degree) coefficients = 0 := by
+    funext i
+    rw [Matrix.toLin'_apply]
+    change (∑ j : Fin degree,
+      (fun n : ℕ => moment (i + n) * p.coeff n) j) = 0
+    calc
+      _ = ∑ j ∈ Finset.range degree, moment (i + j) * p.coeff j :=
+        Fin.sum_univ_eq_sum_range _ degree
+      _ = ∑ j ∈ Finset.range (p.natDegree + 1),
+          p.coeff j * moment (i + j) := by
+        symm
+        rw [← Finset.sum_subset
+          (Finset.range_mono (Nat.succ_le_of_lt p_degree_lt))]
+        · apply Finset.sum_congr rfl
+          intro j _
+          exact mul_comm _ _
+        · intro j j_mem j_not_mem
+          have coeff_zero : p.coeff j = 0 :=
+            coeff_eq_zero_of_natDegree_lt (by
+              rw [Finset.mem_range] at j_not_mem
+              omega)
+          simp [coeff_zero]
+      _ = 0 := recurrence i i.isLt
+  have coefficients_zero : coefficients = 0 := by
+    apply hankel_injective
+    simpa using hankel_zero
+  apply p_ne_zero
+  ext j
+  by_cases j_lt : j < degree
+  · have value_zero := congrFun coefficients_zero ⟨j, j_lt⟩
+    simpa [coefficients] using value_zero
+  · exact coeff_eq_zero_of_natDegree_lt (by omega)
+
 /-- Evaluating a polynomial at the Krylov operator is exactly the usual
 linear recurrence on the scalar moments.  In particular, polynomial
 coefficient `i` multiplies moment `k + i`; certificate formats that store
@@ -278,6 +329,31 @@ theorem injective_of_fullDegree_descendingConnection
   · exact (descendingConnectionPolynomial_annihilates_iff
       u A w shifts degree coefficient leading).mpr recurrence
   · simpa [p, descendingConnectionPolynomial_constantCoeff]
+
+/-- A fully linear-algebraic certificate interface: an injective Hankel moment
+matrix plus the stored full-degree recurrence with nonzero constant term
+implies that the represented endomorphism is nonsingular.  This removes the
+abstract linear-complexity hypothesis from the caller. -/
+theorem injective_of_hankel_and_descendingConnection
+    [FiniteDimensional K V]
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (degree : ℕ)
+    (degree_ne_zero : degree ≠ 0)
+    (dimension : finrank K V = degree)
+    (hankel_injective : Function.Injective
+      (Matrix.toLin'
+        (momentHankelMatrix (scalarKrylovMoment u A w) degree)))
+    (coefficient : ℕ → K) (leading : coefficient 0 = 1)
+    (recurrence : ∀ k < degree,
+      ∑ i ∈ Finset.range (degree + 1),
+        coefficient (degree - i) * scalarKrylovMoment u A w (k + i) = 0)
+    (constant_ne_zero : coefficient degree ≠ 0) :
+    Function.Injective A := by
+  apply injective_of_fullDegree_descendingConnection
+    u A w degree degree degree_ne_zero dimension _ coefficient leading
+    recurrence constant_ne_zero
+  rw [← hasMomentLinearComplexity_krylov_iff]
+  exact hasMomentLinearComplexity_of_hankel_injective
+    (scalarKrylovMoment u A w) degree hankel_injective
 
 end
 

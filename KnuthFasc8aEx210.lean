@@ -1,6 +1,7 @@
 import KnuthFasc8aEx210.Counterexample
 import KnuthFasc8aEx210.BorderLemma
 import KnuthFasc8aEx210.KrylovNonsingularity
+import KnuthFasc8aEx210.PadeHankel
 import KnuthFasc8aEx210.CertificateField
 import KnuthFasc8aEx210.CertificateFiles
 import KnuthFasc8aEx210.CertificateFieldEncoding

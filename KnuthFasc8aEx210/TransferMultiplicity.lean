@@ -68,6 +68,13 @@ theorem rootMultiplicity_map_certificateField (p : ModPolynomial) (a : F101) :
   exact (eq_rootMultiplicity_map
     (algebraMap F101 CertificateField).injective a).symm
 
+/-- Polynomial reversal commutes with an injective coefficient map. -/
+theorem map_reverse_of_injective
+    {R S : Type*} [Semiring R] [Semiring S]
+    (f : R →+* S) (hf : Function.Injective f) (p : R[X]) :
+    p.reverse.map f = (p.map f).reverse := by
+  rw [reverse, reverse, natDegree_map_eq_of_injective hf, reflect_map]
+
 /-- Reversing a nonzero polynomial sends a nonzero root to its reciprocal,
 without changing its multiplicity.  This is the algebraic bridge from a
 transfer-matrix eigenvalue to the corresponding characteristic-power-series
@@ -206,9 +213,17 @@ def certifiedOpenBlockCharpolyProduct
     (u1Minus : Module.End CertificateField (Fin nU1m → CertificateField))
     (u2Plus : Module.End CertificateField (Fin nU2p → CertificateField))
     (u2Minus : Module.End CertificateField (Fin nU2m → CertificateField)) :
-    CertificateField[X] :=
+  CertificateField[X] :=
   [tPlus.charpoly, tMinus.charpoly, u1Plus.charpoly, u1Minus.charpoly,
-    u2Plus.charpoly, u2Minus.charpoly, tPlus.charpoly].prod
+    u2Plus.charpoly, u2Minus.charpoly, tPlus.charpoly,
+    tMinus.charpoly].prod
+
+/-- Base-field counterpart of the certified nontrivial block product. -/
+def baseOpenBlockPowerSeriesProduct
+    (tPlus tMinus u1Plus u1Minus u2Plus u2Minus : ModPolynomial) :
+    ModPolynomial :=
+  [tPlus, tMinus, u1Plus, u1Minus, u2Plus, u2Minus, tPlus,
+    tMinus].prod.reverse
 
 /-- The characteristic power-series polynomial corresponding to the
 certified block product.  For a matrix this reversal is `det (1 - X M)`. -/
@@ -223,6 +238,44 @@ def certifiedOpenBlockPowerSeriesProduct
     CertificateField[X] :=
   (certifiedOpenBlockCharpolyProduct tPlus tMinus u1Plus u1Minus u2Plus
     u2Minus).reverse
+
+/-- Six scalar-extension equalities for the raw reflection blocks assemble to
+the mapped certified power-series product, including the second `Trel` copy
+used for the permutation-similar `Wrel` sector. -/
+theorem baseOpenBlockPowerSeriesProduct_map_eq_certified
+    {nTp nTm nU1p nU1m nU2p nU2m : ℕ}
+    (tPlusBase tMinusBase u1PlusBase u1MinusBase u2PlusBase u2MinusBase :
+      ModPolynomial)
+    (tPlus : Module.End CertificateField (Fin nTp → CertificateField))
+    (tMinus : Module.End CertificateField (Fin nTm → CertificateField))
+    (u1Plus : Module.End CertificateField (Fin nU1p → CertificateField))
+    (u1Minus : Module.End CertificateField (Fin nU1m → CertificateField))
+    (u2Plus : Module.End CertificateField (Fin nU2p → CertificateField))
+    (u2Minus : Module.End CertificateField (Fin nU2m → CertificateField))
+    (tPlus_map : tPlusBase.map (algebraMap F101 CertificateField) =
+      tPlus.charpoly)
+    (tMinus_map : tMinusBase.map (algebraMap F101 CertificateField) =
+      tMinus.charpoly)
+    (u1Plus_map : u1PlusBase.map (algebraMap F101 CertificateField) =
+      u1Plus.charpoly)
+    (u1Minus_map : u1MinusBase.map (algebraMap F101 CertificateField) =
+      u1Minus.charpoly)
+    (u2Plus_map : u2PlusBase.map (algebraMap F101 CertificateField) =
+      u2Plus.charpoly)
+    (u2Minus_map : u2MinusBase.map (algebraMap F101 CertificateField) =
+      u2Minus.charpoly) :
+    (baseOpenBlockPowerSeriesProduct tPlusBase tMinusBase u1PlusBase
+      u1MinusBase u2PlusBase u2MinusBase).map
+        (algebraMap F101 CertificateField) =
+      certifiedOpenBlockPowerSeriesProduct tPlus tMinus u1Plus u1Minus
+        u2Plus u2Minus := by
+  rw [baseOpenBlockPowerSeriesProduct, certifiedOpenBlockPowerSeriesProduct,
+    map_reverse_of_injective _
+      (algebraMap F101 CertificateField).injective]
+  simp only [certifiedOpenBlockCharpolyProduct, List.prod_cons, List.prod_nil,
+    mul_one, Polynomial.map_mul, reverse_mul_of_domain]
+  rw [tPlus_map, tMinus_map, u1Plus_map, u1Minus_map, u2Plus_map,
+    u2Minus_map]
 
 /-- The six certificate conclusions assemble to total characteristic-root
 multiplicity `1 + 0 + 0 + 0 + 0 + 0 + 1 = 2`. -/
@@ -248,7 +301,7 @@ theorem certifiedOpenBlockCharpolyProduct_rootMultiplicity_fifty_eq_two
       u2Minus_zero]
   · intro p p_mem
     simp only [List.mem_cons, List.not_mem_nil, or_false] at p_mem
-    rcases p_mem with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    rcases p_mem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
       exact (LinearMap.charpoly_monic _).ne_zero
 
 /-- On the characteristic-power-series side, the reciprocal of `50` has
@@ -277,7 +330,7 @@ theorem certifiedOpenBlockPowerSeriesProduct_rootMultiplicity_inv_fifty_eq_two
   · exact List.prod_ne_zero (by
       intro zero_mem
       simp only [List.mem_cons, List.not_mem_nil, or_false] at zero_mem
-      rcases zero_mem with h | h | h | h | h | h | h <;>
+      rcases zero_mem with h | h | h | h | h | h | h | h <;>
         exact (LinearMap.charpoly_monic _).ne_zero h.symm)
   · exact certificateField_fifty_ne_zero
 
@@ -311,6 +364,76 @@ theorem visibleFactor_emultiplicity_two_of_map_eq_certifiedBlockProduct
     certifiedOpenBlockPowerSeriesProduct_rootMultiplicity_inv_fifty_eq_two
       tPlus tMinus u1Plus u1Minus u2Plus u2Minus tPlus_one tMinus_zero
       u1Plus_zero u1Minus_zero u2Plus_zero u2Minus_zero
+
+/-- Per-block scalar-extension equalities plus the six certificate conclusions
+imply visible-factor multiplicity two for the raw `F₁₀₁` nontrivial block
+product. -/
+theorem baseOpenBlockPowerSeriesProduct_visibleFactor_emultiplicity_eq_two
+    {nTp nTm nU1p nU1m nU2p nU2m : ℕ}
+    (tPlusBase tMinusBase u1PlusBase u1MinusBase u2PlusBase u2MinusBase :
+      ModPolynomial)
+    (tPlus : Module.End CertificateField (Fin nTp → CertificateField))
+    (tMinus : Module.End CertificateField (Fin nTm → CertificateField))
+    (u1Plus : Module.End CertificateField (Fin nU1p → CertificateField))
+    (u1Minus : Module.End CertificateField (Fin nU1m → CertificateField))
+    (u2Plus : Module.End CertificateField (Fin nU2p → CertificateField))
+    (u2Minus : Module.End CertificateField (Fin nU2m → CertificateField))
+    (tPlus_map : tPlusBase.map (algebraMap F101 CertificateField) =
+      tPlus.charpoly)
+    (tMinus_map : tMinusBase.map (algebraMap F101 CertificateField) =
+      tMinus.charpoly)
+    (u1Plus_map : u1PlusBase.map (algebraMap F101 CertificateField) =
+      u1Plus.charpoly)
+    (u1Minus_map : u1MinusBase.map (algebraMap F101 CertificateField) =
+      u1Minus.charpoly)
+    (u2Plus_map : u2PlusBase.map (algebraMap F101 CertificateField) =
+      u2Plus.charpoly)
+    (u2Minus_map : u2MinusBase.map (algebraMap F101 CertificateField) =
+      u2Minus.charpoly)
+    (tPlus_one : tPlus.charpoly.rootMultiplicity (50 : CertificateField) = 1)
+    (tMinus_zero : tMinus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u1Plus_zero : u1Plus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u1Minus_zero : u1Minus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u2Plus_zero : u2Plus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u2Minus_zero : u2Minus.charpoly.rootMultiplicity (50 : CertificateField) = 0) :
+    emultiplicity visibleFactor
+      (baseOpenBlockPowerSeriesProduct tPlusBase tMinusBase u1PlusBase
+        u1MinusBase u2PlusBase u2MinusBase) = 2 := by
+  have base_ne : baseOpenBlockPowerSeriesProduct tPlusBase tMinusBase
+      u1PlusBase u1MinusBase u2PlusBase u2MinusBase ≠ 0 := by
+    intro base_zero
+    have mapped_zero := congrArg
+      (Polynomial.map (algebraMap F101 CertificateField)) base_zero
+    rw [baseOpenBlockPowerSeriesProduct_map_eq_certified tPlusBase tMinusBase
+      u1PlusBase u1MinusBase u2PlusBase u2MinusBase tPlus tMinus u1Plus
+      u1Minus u2Plus u2Minus tPlus_map tMinus_map u1Plus_map u1Minus_map
+      u2Plus_map u2Minus_map] at mapped_zero
+    have certified_ne : certifiedOpenBlockPowerSeriesProduct tPlus tMinus
+        u1Plus u1Minus u2Plus u2Minus ≠ 0 := by
+      have product_ne : certifiedOpenBlockCharpolyProduct tPlus tMinus
+          u1Plus u1Minus u2Plus u2Minus ≠ 0 := by
+        apply List.prod_ne_zero
+        intro zero_mem
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at zero_mem
+        rcases zero_mem with h | h | h | h | h | h | h | h <;>
+          exact (LinearMap.charpoly_monic _).ne_zero h.symm
+      rw [certifiedOpenBlockPowerSeriesProduct]
+      simpa only [Ne, reverse_eq_zero] using product_ne
+    exact certified_ne (by simpa using mapped_zero)
+  apply visibleFactor_emultiplicity_two_of_map_eq_certifiedBlockProduct
+    (baseOpenBlockPowerSeriesProduct tPlusBase tMinusBase u1PlusBase
+      u1MinusBase u2PlusBase u2MinusBase) base_ne tPlus tMinus u1Plus
+      u1Minus u2Plus u2Minus
+  · exact baseOpenBlockPowerSeriesProduct_map_eq_certified
+      tPlusBase tMinusBase u1PlusBase u1MinusBase u2PlusBase u2MinusBase
+      tPlus tMinus u1Plus u1Minus u2Plus u2Minus tPlus_map tMinus_map
+      u1Plus_map u1Minus_map u2Plus_map u2Minus_map
+  · exact tPlus_one
+  · exact tMinus_zero
+  · exact u1Plus_zero
+  · exact u1Minus_zero
+  · exact u2Plus_zero
+  · exact u2Minus_zero
 
 /-- Adding all singleton SCC factors to the certified nontrivial blocks leaves
 the visible-factor multiplicity equal to two when no singleton loop has weight

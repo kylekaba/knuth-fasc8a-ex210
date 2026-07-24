@@ -255,6 +255,14 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   verifySha256 e.matrix e.matrixSha256 matrixBytes
   let matrix ← exceptToIO s!"matrix {e.matrix}" (parseMatrixHeader matrixBytes)
   let matrixValidation ← exceptToIO s!"matrix CSR {e.matrix}" (validateMatrixCSR matrixBytes matrix)
+  let csrColumnBad := matrixCSRColumnBad matrixBytes matrix
+  if csrColumnBad != 0 then
+    throw <| IO.userError
+      s!"proof-shaped CSR column check failed for {e.matrix}: {csrColumnBad} bad entries"
+  let csrRowPointerBad := matrixCSRRowPointerBad matrixBytes matrix
+  if csrRowPointerBad != 0 then
+    throw <| IO.userError
+      s!"proof-shaped CSR row-pointer check failed for {e.matrix}: {csrRowPointerBad} bad rows"
   if matrix.prime != 101 then
     throw <| IO.userError s!"matrix {e.matrix} has prime {matrix.prime}, expected 101"
   let certBytes ← readBin e.cert
@@ -324,9 +332,22 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
           s!"eigenvector residual check failed for {e.cert}: {residualBad} bad rows"
       pure (some eig, some residualBad)
   let krylovRequested := Nat.min krylovPrefixMoments cert.terms
-  let krylovPrefixBad ←
-    checkKrylovMomentsWithProgress (toString e.cert) cert matrixBytes matrix
-      eigForKrylov? krylovPrefixMoments
+  let seedByteData := rankSeedByteData cert.n cert.seed
+  let seedSizeBad := seedByteData.sizeBad cert.n
+  if seedSizeBad != 0 then
+    throw <| IO.userError
+      s!"seed byte-vector size check failed for {e.cert}: {seedSizeBad} bad vectors"
+  let expectedOrder := matrix.n + if eigForKrylov?.isSome then 1 else 0
+  if cert.n != expectedOrder then
+    throw <| IO.userError "certificate order does not match operator dimension"
+  let krylovPrefixBad ← match eigForKrylov? with
+    | none =>
+        pure <| cert.normalKrylovMismatchCount matrixBytes matrix
+          seedByteData.dR seedByteData.dL seedByteData.u seedByteData.x
+          krylovRequested
+    | some eig =>
+        checkKrylovMomentsWithProgress (toString e.cert) cert matrixBytes matrix
+          (some eig) krylovPrefixMoments
   if krylovPrefixBad != 0 then
     throw <| IO.userError
       s!"Krylov moment check failed for {e.cert}: {krylovPrefixBad} bad moments"
@@ -352,7 +373,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, csr_column_bad={csrColumnBad}, csr_row_pointer_bad={csrRowPointerBad}, seed_size_bad={seedSizeBad}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then

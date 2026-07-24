@@ -60,6 +60,58 @@ theorem extDotBytes_toCertificateField (u x : ByteArray) (n : ℕ) :
     ExtElt.toCertificateField, ExtElt.toCertificateField,
     certificatePair_mul]
 
+theorem matrixColumnAt_lt_of_matrixCSRColumnBad_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (no_bad : matrixCSRColumnBad matrixBytes header = 0)
+    {entry : ℕ} (entry_lt : entry < header.entries) :
+    matrixColumnAt matrixBytes header entry < header.n := by
+  by_contra column_bad
+  have bad_mem : entry ∈ (List.range header.entries).filter (fun i =>
+      decide (header.n ≤ matrixColumnAt matrixBytes header i)) := by
+    simp [entry_lt, Nat.le_of_not_gt column_bad]
+  have bad_pos : 0 < matrixCSRColumnBad matrixBytes header := by
+    rw [matrixCSRColumnBad]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
+theorem matrixRowBounds_of_matrixCSRRowPointerBad_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (no_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (row : Fin header.n) :
+    matrixRowStart matrixBytes header row ≤ matrixRowStop matrixBytes header row ∧
+      matrixRowStop matrixBytes header row ≤ header.entries := by
+  by_contra bounds_bad
+  have invalid :
+      matrixRowStop matrixBytes header row < matrixRowStart matrixBytes header row ∨
+        header.entries < matrixRowStop matrixBytes header row := by
+    omega
+  have bad_mem : row.val ∈ (List.range header.n).filter (fun i =>
+      decide (matrixRowStop matrixBytes header i <
+        matrixRowStart matrixBytes header i ∨
+        header.entries < matrixRowStop matrixBytes header i)) := by
+    simp [row.isLt, invalid]
+  have bad_pos : 0 < matrixCSRRowPointerBad matrixBytes header := by
+    rw [matrixCSRRowPointerBad]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
+/-- Zero proof-shaped CSR counters imply the quantified column bound consumed
+by every sparse-row semantics theorem. -/
+theorem matrixColumnsValid_of_bad_counts_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0) :
+    ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n := by
+  intro row offset offset_lt
+  have bounds := matrixRowBounds_of_matrixCSRRowPointerBad_eq_zero
+    matrixBytes header row_pointer_bad row
+  apply matrixColumnAt_lt_of_matrixCSRColumnBad_eq_zero matrixBytes header
+    column_bad
+  omega
+
 /-- One row of the parsed CSR matrix acting on a field vector.  Malformed
 column indices contribute zero; the parser's CSR validation later rules them
 out. -/
@@ -397,6 +449,93 @@ theorem krylovStepBytes_normal_encodedVector
           rw [y_semantics, dx_semantics]
           rfl
 
+@[simp]
+theorem normalKrylovOrbitBytes_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (dR dL initial : ByteArray) :
+    normalKrylovOrbitBytes matrixBytes header dR dL initial 0 = initial := by
+  rfl
+
+theorem normalKrylovOrbitBytes_size
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (dR dL initial : ByteArray) (initial_size : initial.size = 2 * header.n) :
+    ∀ k, (normalKrylovOrbitBytes matrixBytes header dR dL initial k).size =
+      2 * header.n := by
+  intro k
+  cases k with
+  | zero => exact initial_size
+  | succ k => simp [normalKrylovOrbitBytes, pointwiseProductBytes_size]
+
+theorem KrylovSeedByteData.sizes_of_sizeBad_eq_zero
+    (data : KrylovSeedByteData) (order : ℕ)
+    (no_bad : data.sizeBad order = 0) :
+    data.dR.size = 2 * order ∧ data.dL.size = 2 * order ∧
+      data.u.size = 2 * order ∧ data.x.size = 2 * order := by
+  simp only [KrylovSeedByteData.sizeBad] at no_bad
+  split at no_bad <;> split at no_bad <;> split at no_bad <;>
+    split at no_bad <;> simp_all
+
+/-- The canonical total normal orbit makes every partial byte step succeed
+when the three input vectors have the expected encoded dimension. -/
+theorem krylovStepBytes_normalKrylovOrbit
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (dR dL initial : ByteArray)
+    (dR_size : dR.size = 2 * header.n)
+    (dL_size : dL.size = 2 * header.n)
+    (initial_size : initial.size = 2 * header.n) :
+    ∀ k, krylovStepBytes matrixBytes header none dR dL
+      (normalKrylovOrbitBytes matrixBytes header dR dL initial k) header.n =
+        .ok (normalKrylovOrbitBytes matrixBytes header dR dL initial (k + 1)) := by
+  intro k
+  let orbit := normalKrylovOrbitBytes matrixBytes header dR dL initial k
+  let dx := pointwiseProductBytes dR orbit header.n
+  let y := matrixApplyShiftedNormalBytesData matrixBytes header dx header.n
+  have orbit_size : orbit.size = 2 * header.n :=
+    normalKrylovOrbitBytes_size matrixBytes header dR dL initial initial_size k
+  have dx_result : mulByteVectors dR orbit header.n = .ok dx := by
+    simp [mulByteVectors, dx, dR_size, orbit_size]
+  have y_result : matrixApplyShiftedNormalBytes matrixBytes header dx = .ok y := by
+    simp [matrixApplyShiftedNormalBytes, y, dx,
+      pointwiseProductBytes_size]
+  have out_result : mulByteVectors dL y header.n =
+      .ok (pointwiseProductBytes dL y header.n) := by
+    simp [mulByteVectors, dL_size, y, matrixApplyShiftedNormalBytesData_size]
+  change (mulByteVectors dR orbit header.n >>= fun dx' =>
+    matrixApplyShiftedNormalBytes matrixBytes header dx' >>= fun y' =>
+      mulByteVectors dL y' header.n) = _
+  rw [dx_result]
+  change (matrixApplyShiftedNormalBytes matrixBytes header dx >>= fun y' =>
+    mulByteVectors dL y' header.n) = _
+  rw [y_result]
+  change mulByteVectors dL y header.n =
+    .ok (pointwiseProductBytes dL y header.n)
+  exact out_result
+
+/-- A zero mismatch count proves every stored moment in the requested prefix
+equals the dot product along the canonical normal byte orbit. -/
+theorem RankCertificateFile.storedMoment_eq_normalKrylovOrbit_of_mismatchCount_eq_zero
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (dR dL probe initial : ByteArray) (count : ℕ)
+    (no_bad : cert.normalKrylovMismatchCount matrixBytes header dR dL probe
+      initial count = 0) :
+    ∀ k < count, pairAt cert.moments k =
+      extDotBytes probe
+        (normalKrylovOrbitBytes matrixBytes header dR dL initial k) header.n := by
+  intro k k_lt
+  by_contra mismatch
+  have k_mem : k ∈ List.range count := by simpa using k_lt
+  have bad_mem : k ∈ (List.range count).filter (fun i =>
+      pairAt cert.moments i !=
+        extDotBytes probe
+          (normalKrylovOrbitBytes matrixBytes header dR dL initial i)
+          header.n) := by
+    simp [k_mem, mismatch]
+  have bad_pos : 0 < cert.normalKrylovMismatchCount matrixBytes header dR dL
+      probe initial count := by
+    rw [RankCertificateFile.normalKrylovMismatchCount]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
 /-- Repeated successful byte steps represent powers of the normal
 preconditioned operator. -/
 theorem normalKrylovOrbit_encodedVector
@@ -547,6 +686,105 @@ theorem PadeWitnessFile.injective_normal_of_checked_full_recurrence
     orbit_zero step columns_valid stored_match
   exact cert.stored_recurrence_of_fullRecurrenceBad_eq_zero bm_terms bm_terms_le
     full_recurrence_bad
+
+/-- Zero recurrence and canonical-orbit mismatch counts are sufficient for
+normal-certificate injectivity.  The replay orbit, successful step equations,
+and individual stored-moment equalities are all derived internally. -/
+theorem PadeWitnessFile.injective_normal_of_checked_mismatch_counts
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray}
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (full_recurrence_bad : cert.fullRecurrenceBad = 0)
+    (krylov_bad : cert.normalKrylovMismatchCount matrixBytes header dR dL
+      probe initial (2 * cert.degree) = 0)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0)
+    (dR_size : dR.size = 2 * header.n)
+    (dL_size : dL.size = 2 * header.n)
+    (initial_size : initial.size = 2 * header.n)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL) := by
+  let orbit := normalKrylovOrbitBytes matrixBytes header dR dL initial
+  apply witness.injective_normal_of_checked_full_recurrence cert orbit
+    degree_gt_one degree_eq bm_terms bm_terms_le u_length_le v_length_le no_bad
+    full_recurrence_bad leading constant_ne_zero
+  · rfl
+  · exact krylovStepBytes_normalKrylovOrbit matrixBytes header dR dL initial
+      dR_size dL_size initial_size
+  · exact columns_valid
+  · exact cert.storedMoment_eq_normalKrylovOrbit_of_mismatchCount_eq_zero
+      matrixBytes header dR dL probe initial (2 * cert.degree) krylov_bad
+
+/-- Fully counter-shaped normal-certificate bridge: recurrence, Krylov replay,
+and CSR structure are all supplied by zero executable mismatch counts. -/
+theorem PadeWitnessFile.injective_normal_of_checked_counters
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray}
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (full_recurrence_bad : cert.fullRecurrenceBad = 0)
+    (krylov_bad : cert.normalKrylovMismatchCount matrixBytes header dR dL
+      probe initial (2 * cert.degree) = 0)
+    (csr_column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (csr_row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0)
+    (dR_size : dR.size = 2 * header.n)
+    (dL_size : dL.size = 2 * header.n)
+    (initial_size : initial.size = 2 * header.n) :
+    Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL) := by
+  apply witness.injective_normal_of_checked_mismatch_counts cert degree_gt_one
+    degree_eq bm_terms bm_terms_le u_length_le v_length_le no_bad
+    full_recurrence_bad krylov_bad leading constant_ne_zero dR_size dL_size
+    initial_size
+  exact matrixColumnsValid_of_bad_counts_eq_zero matrixBytes header
+    csr_column_bad csr_row_pointer_bad
+
+/-- Counter-shaped bridge specialized to a seed-expansion record. -/
+theorem PadeWitnessFile.injective_normal_of_checked_seed_counters
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    (seedData : KrylovSeedByteData)
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (full_recurrence_bad : cert.fullRecurrenceBad = 0)
+    (krylov_bad : cert.normalKrylovMismatchCount matrixBytes header
+      seedData.dR seedData.dL seedData.u seedData.x (2 * cert.degree) = 0)
+    (csr_column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (csr_row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (seed_size_bad : seedData.sizeBad header.n = 0)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0) :
+    Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header seedData.dR seedData.dL) := by
+  have sizes := seedData.sizes_of_sizeBad_eq_zero header.n seed_size_bad
+  exact witness.injective_normal_of_checked_counters cert degree_gt_one degree_eq
+    bm_terms bm_terms_le u_length_le v_length_le no_bad full_recurrence_bad
+    krylov_bad csr_column_bad csr_row_pointer_bad leading constant_ne_zero
+    sizes.1 sizes.2.1 sizes.2.2.2
 
 end
 

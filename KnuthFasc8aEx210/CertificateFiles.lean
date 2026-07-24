@@ -211,6 +211,40 @@ def matrixStateLabelOffset (header : MatrixHeader) : Nat :=
 def matrixStateLabelAt (bytes : ByteArray) (header : MatrixHeader) (row : Nat) : Nat :=
   u64LEAtNat bytes (matrixStateLabelOffset header + 8 * row)
 
+private unsafe def matrixCSRColumnBadFast
+    (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for entry in [0:header.entries] do
+      if header.n ≤ matrixColumnAt bytes header entry then
+        bad := bad + 1
+    pure bad
+
+/-- Number of CSR entries whose column index lies outside the matrix. -/
+@[implemented_by matrixCSRColumnBadFast]
+def matrixCSRColumnBad (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  ((List.range header.entries).filter fun entry =>
+    decide (header.n ≤ matrixColumnAt bytes header entry)).length
+
+private unsafe def matrixCSRRowPointerBadFast
+    (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for row in [0:header.n] do
+      let start := matrixRowStart bytes header row
+      let stop := matrixRowStop bytes header row
+      if stop < start || header.entries < stop then
+        bad := bad + 1
+    pure bad
+
+/-- Number of CSR rows whose interval is decreasing or exceeds the advertised
+entry array. -/
+@[implemented_by matrixCSRRowPointerBadFast]
+def matrixCSRRowPointerBad (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  ((List.range header.n).filter fun row =>
+    decide (matrixRowStop bytes header row < matrixRowStart bytes header row ∨
+      header.entries < matrixRowStop bytes header row)).length
+
 structure EigenvectorFile where
   n : Nat
   pivot : Nat
@@ -874,6 +908,14 @@ def rankSeedByteData (order : Nat) (seed : UInt64) : KrylovSeedByteData :=
       x := pushExtByteArray x xi
     pure { dR, dL, u, x, diagonalRejections, finalState := state }
 
+/-- Proof-shaped validation count for the four encoded vectors emitted by the
+seed expander. -/
+def KrylovSeedByteData.sizeBad (data : KrylovSeedByteData) (order : Nat) : Nat :=
+  (if data.dR.size = 2 * order then 0 else 1) +
+  (if data.dL.size = 2 * order then 0 else 1) +
+  (if data.u.size = 2 * order then 0 else 1) +
+  (if data.x.size = 2 * order then 0 else 1)
+
 def rankSeedExpansionSummary (order : Nat) (seed : UInt64) :
     SeedExpansionSummary :=
   let data := rankSeedData order seed
@@ -1097,6 +1139,51 @@ def krylovStepBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     | none => matrixApplyShiftedNormalBytes matrixBytes header dx
     | some eig => matrixApplyShiftedBytes matrixBytes header (some eig) dx
   mulByteVectors dL y order
+
+/-- Canonical total byte orbit for a normal certificate.  This exposes the
+three successful operations hidden behind `krylovStepBytes`: right diagonal
+multiplication, shifted CSR application, and left diagonal multiplication. -/
+def normalKrylovOrbitBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (dR dL initial : ByteArray) : Nat → ByteArray
+  | 0 => initial
+  | k + 1 =>
+      pointwiseProductBytes dL
+        (matrixApplyShiftedNormalBytesData matrixBytes header
+          (pointwiseProductBytes dR
+            (normalKrylovOrbitBytes matrixBytes header dR dL initial k)
+            header.n)
+          header.n)
+        header.n
+
+private unsafe def RankCertificateFile.normalKrylovMismatchCountFast
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (dR dL probe initial : ByteArray)
+    (count : Nat) : Nat :=
+  Id.run do
+    let mut x := initial
+    let mut bad := 0
+    for k in [0:count] do
+      if pairAt cert.moments k != extDotBytes probe x header.n then
+        bad := bad + 1
+      if k + 1 < count then
+        let dx := pointwiseProductBytes dR x header.n
+        let y := matrixApplyShiftedNormalBytesData matrixBytes header dx header.n
+        x := pointwiseProductBytes dL y header.n
+    pure bad
+
+/-- Number of stored moments that disagree with the canonical normal byte
+orbit over the requested prefix.  Proofs see the explicit finite filter;
+compiled checks use the allocation-efficient single-pass replay. -/
+@[implemented_by RankCertificateFile.normalKrylovMismatchCountFast]
+def RankCertificateFile.normalKrylovMismatchCount
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (dR dL probe initial : ByteArray)
+    (count : Nat) : Nat :=
+  ((List.range count).filter fun k =>
+    pairAt cert.moments k !=
+      extDotBytes probe
+        (normalKrylovOrbitBytes matrixBytes header dR dL initial k)
+        header.n).length
 
 def krylovStep (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : Array ExtElt) :

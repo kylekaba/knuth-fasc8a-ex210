@@ -144,7 +144,9 @@ There are two deliberately separate layers:
 1. Lean's kernel checks the concrete polynomial argument, including
    constant-term-one primitiveness, Gauss's lemma, coefficient reduction,
    the `1 - 50X` multiplicity obstruction, and the bordered-matrix kernel/range
-   lemma.
+   lemma. It also proves that the encoded Padé convolution and zero mismatch
+   count imply the complete polynomial Bézout identity, and composes that
+   identity with the Hankel/Krylov nonsingularity theorem.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -155,6 +157,15 @@ and algebraic core, but not a single end-to-end kernel theorem derived from the
 binary files. The transfer decomposition, its denominator interpretation, and
 the conversion of runtime matrix checks into polynomial multiplicity proof
 terms remain on the external side of the boundary.
+
+The certificate-to-nonsingularity bridge is:
+
+```lean
+KnuthFasc8aEx210.PadeWitnessFile.injective_of_checked_pade
+```
+
+Its remaining computational premise is equality between the stored moments
+and the scalar Krylov moments of the represented matrix operator.
 
 Main theorem:
 

@@ -126,6 +126,10 @@ In brief, the Lean executable:
   of `H`; using Mathlib's generalized-eigenspace theorem, Lean then proves the
   eigenvalue has characteristic-polynomial root multiplicity exactly one.
 
+Lean also proves that a zero executable Padé mismatch count denotes the full
+polynomial Bézout identity and, once the stored moments are identified with the
+matrix's scalar Krylov moments, implies injectivity of the represented operator.
+
 Type-check the Lean proof and run the quick certificate smoke check:
 
 ```sh

@@ -636,7 +636,8 @@ def extConvolutionCoefficient
   let totals := extConvolutionSums left right rightLength k leftLength
   { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
 
-def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtElt :=
+private unsafe def RankCertificateFile.padeNumeratorFast
+    (cert : RankCertificateFile) : Array ExtElt :=
   Id.run do
     let mut numerator := Array.emptyWithCapacity cert.degree
     for k in [0:cert.degree] do
@@ -646,10 +647,36 @@ def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtEl
           (pairAt cert.moments) cert.bmTerms k
     pure numerator
 
+/-- The low Padé numerator coefficients.  The specification is an indexed
+array; the compiled checker uses the allocation-efficient push loop. -/
+def RankCertificateFile.padeNumeratorCoefficient
+    (cert : RankCertificateFile) (k : Nat) : ExtElt :=
+  extConvolutionCoefficient
+    (pairAt cert.coefficients) (cert.degree + 1)
+    (pairAt cert.moments) cert.bmTerms k
+
+@[implemented_by RankCertificateFile.padeNumeratorFast]
+def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtElt :=
+  Array.ofFn (n := cert.degree) fun k =>
+    cert.padeNumeratorCoefficient k
+
+def PadeWitnessFile.bezoutCoefficient
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) (k : Nat) : ExtElt :=
+  let ud := extConvolutionCoefficient
+    (pairAt witness.uCoefficients) witness.uLength
+    (pairAt cert.coefficients) (cert.degree + 1) k
+  let vr := extConvolutionCoefficient
+    (pairAt witness.vCoefficients) witness.vLength
+    cert.padeNumeratorCoefficient cert.degree k
+  ud.add vr
+
+def padeBezoutExpected (k : Nat) : ExtElt :=
+  if k == 0 then { a := 1, b := 0 } else { a := 0, b := 0 }
+
 /-- Number of coefficients violating the checked identity `U*D + V*R = 1`,
 where `D` is the stored connection denominator and `R` is recomputed from the
 stored moments. -/
-def PadeWitnessFile.bezoutBad
+private unsafe def PadeWitnessFile.bezoutBadFast
     (witness : PadeWitnessFile) (cert : RankCertificateFile) : Nat :=
   Id.run do
     let numerator := cert.padeNumerator
@@ -662,10 +689,18 @@ def PadeWitnessFile.bezoutBad
         (pairAt witness.vCoefficients) witness.vLength
         (fun i => numerator[i]!) numerator.size k
       let actual := ud.add vr
-      let expected : ExtElt := if k == 0 then { a := 1, b := 0 } else { a := 0, b := 0 }
+      let expected := padeBezoutExpected k
       if actual != expected then
         bad := bad + 1
     pure bad
+
+/-- Specification-shaped mismatch count.  The executable uses the equivalent
+allocation-efficient loop above. -/
+@[implemented_by PadeWitnessFile.bezoutBadFast]
+def PadeWitnessFile.bezoutBad
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) : Nat :=
+  ((List.range (2 * cert.degree)).filter fun k =>
+    witness.bezoutCoefficient cert k != padeBezoutExpected k).length
 
 structure BMResult where
   degree : Nat

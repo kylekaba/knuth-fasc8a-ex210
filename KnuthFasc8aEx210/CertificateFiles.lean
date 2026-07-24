@@ -550,6 +550,100 @@ def pairAt (bytes : ByteArray) (i : Nat) : ExtElt where
   a := bytes[2 * i]!
   b := bytes[2 * i + 1]!
 
+structure PadeWitnessFile where
+  version : Nat
+  prime : Nat
+  nonresidue : Nat
+  degree : Nat
+  uLength : Nat
+  vLength : Nat
+  certificateHash : UInt64
+  uCoefficients : ByteArray
+  vCoefficients : ByteArray
+
+def parsePadeWitness (bytes : ByteArray) : ParseM PadeWitnessFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicExact c "KPB101W1"
+  let (version, c1) ← c.readU32LE "Padé witness version"
+  c := c1
+  let (prime, c1) ← c.readU32LE "Padé witness prime"
+  c := c1
+  let (nonresidue, c1) ← c.readU32LE "Padé witness nonresidue"
+  c := c1
+  let (degree, c1) ← c.readU32LE "Padé witness degree"
+  c := c1
+  let (uLength, c1) ← c.readU32LE "Padé U length"
+  c := c1
+  let (vLength, c1) ← c.readU32LE "Padé V length"
+  c := c1
+  let (certificateHash, c1) ← c.readU64LE "Padé source-certificate hash"
+  c := c1
+  require (version == 1) "unsupported Padé witness version"
+  require (prime == 101) "Padé witness prime is not 101"
+  require (nonresidue == 2) "Padé witness nonresidue is not 2"
+  require (1 < degree) "Padé witness degree is too small"
+  require (uLength <= degree) "Padé U polynomial is too long"
+  require (vLength <= degree) "Padé V polynomial is too long"
+  let (uCoefficients, c1) ← c.readBytes (2 * uLength) "Padé U coefficients"
+  c := c1
+  let (vCoefficients, c1) ← c.readBytes (2 * vLength) "Padé V coefficients"
+  c := c1
+  requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 uCoefficients)
+    "Padé U coefficient is not reduced modulo 101"
+  require (byteArrayIsCanonicalMod101 vCoefficients)
+    "Padé V coefficient is not reduced modulo 101"
+  pure {
+    version, prime, nonresidue, degree, uLength, vLength, certificateHash,
+    uCoefficients, vCoefficients
+  }
+
+/-- One coefficient of a convolution in `F_101[t]/(t^2-2)`. -/
+def extConvolutionCoefficient
+    (left : Nat → ExtElt) (leftLength : Nat)
+    (right : Nat → ExtElt) (rightLength k : Nat) : ExtElt :=
+  Id.run do
+    let mut real : Nat := 0
+    let mut imag : Nat := 0
+    for i in [0:leftLength] do
+      if i <= k && k - i < rightLength then
+        let x := left i
+        let y := right (k - i)
+        real := real + x.a.toNat * y.a.toNat + 2 * x.b.toNat * y.b.toNat
+        imag := imag + x.a.toNat * y.b.toNat + x.b.toNat * y.a.toNat
+    pure { a := u8Mod101 real, b := u8Mod101 imag }
+
+def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtElt :=
+  Id.run do
+    let mut numerator := Array.emptyWithCapacity cert.degree
+    for k in [0:cert.degree] do
+      numerator := numerator.push <|
+        extConvolutionCoefficient
+          (pairAt cert.coefficients) (cert.degree + 1)
+          (pairAt cert.moments) cert.bmTerms k
+    pure numerator
+
+/-- Number of coefficients violating the checked identity `U*D + V*R = 1`,
+where `D` is the stored connection denominator and `R` is recomputed from the
+stored moments. -/
+def PadeWitnessFile.bezoutBad
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) : Nat :=
+  Id.run do
+    let numerator := cert.padeNumerator
+    let mut bad := 0
+    for k in [0:2 * cert.degree] do
+      let ud := extConvolutionCoefficient
+        (pairAt witness.uCoefficients) witness.uLength
+        (pairAt cert.coefficients) (cert.degree + 1) k
+      let vr := extConvolutionCoefficient
+        (pairAt witness.vCoefficients) witness.vLength
+        (fun i => numerator[i]!) numerator.size k
+      let actual := ud.add vr
+      let expected : ExtElt := if k == 0 then { a := 1, b := 0 } else { a := 0, b := 0 }
+      if actual != expected then
+        bad := bad + 1
+    pure bad
+
 structure BMResult where
   degree : Nat
   coefficients : Array ExtElt

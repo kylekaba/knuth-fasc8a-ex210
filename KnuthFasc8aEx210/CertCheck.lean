@@ -10,6 +10,8 @@ structure RankExpectation where
   matrixSha256 : String
   cert : FilePath
   certSha256 : String
+  pade : FilePath
+  padeSha256 : String
   eig : Option FilePath
   eigSha256 : Option String
   order : Nat
@@ -24,6 +26,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "55c89f1883f95c0a9cce964bd2193dbc1220badf216a75e198f50b24da9844cb",
     cert := root / "data/certs/Trel_plus_border.kwc2",
     certSha256 := "f9f7c2a40d13b3dff6c0a35ae5c0a3123b30b7d7e89ccedc52e73461920dd97a",
+    pade := root / "data/certs/Trel_plus_border.kpw1",
+    padeSha256 := "0b6442316ab366f161fe492cbbf665db21b5bb85085bef2f8de1cf8f62cf0018",
     eig := some (root / "data/certs/Trel_plus_eigen50.vec"),
     eigSha256 := some "d38a64b7ef34ccfd4c714ac10970f996bc0ee7d5a76a6ef48f56da6920bb9ce9",
     order := 16832, degree := 16832,
@@ -34,6 +38,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "9a4b56c30ba48b25ba64034889d6ce10b2581ac18523870d7fa850fb294c107f",
     cert := root / "data/certs/Trel_minus_shift50.kwc2",
     certSha256 := "eec4d64aedb6aa679d0ff53fd64a02fce3e6764126cdcaecb2d34d771c697f38",
+    pade := root / "data/certs/Trel_minus_shift50.kpw1",
+    padeSha256 := "5efc5b45f47074ac0a3d2162d4cd079fc90ff3073696c2592cd6839dc7b3143e",
     eig := none,
     eigSha256 := none,
     order := 16578, degree := 16578,
@@ -44,6 +50,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "5c21c664c261519e967635a02f10cb79cf945790f3b6828a20d346e55d6e3ce3",
     cert := root / "data/certs/U1_plus_shift50.kwc2",
     certSha256 := "eed6892a2fce9d5c3b229b5d3c6a418fa32a72125a7fbd7d6f6813d88bd6b992",
+    pade := root / "data/certs/U1_plus_shift50.kpw1",
+    padeSha256 := "804204462c1bb0832c51760643dcbf3016953d7ebbadc9f42069158229177bae",
     eig := none,
     eigSha256 := none,
     order := 25617, degree := 25617,
@@ -54,6 +62,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "8412832c21ec5be2b242882b3ef2d8d688c503d42a345efdf88c5d02de7dde53",
     cert := root / "data/certs/U1_minus_shift50.kwc2",
     certSha256 := "c05347fe795621b5b17b92bb44f29828747dfcec9e620ccabcb45d7c64b65ed6",
+    pade := root / "data/certs/U1_minus_shift50.kpw1",
+    padeSha256 := "39486d05448b17b28fc5fbb19f6d921948fc080ea768e68ef047a0a751af459b",
     eig := none,
     eigSha256 := none,
     order := 25495, degree := 25495,
@@ -64,6 +74,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "0cf983f4721d5704fcfbde68571d600272fa03ff283355858d5735ea04b9ef88",
     cert := root / "data/certs/U2_plus_shift50.kwc2",
     certSha256 := "fed9c7c7ab70e7593d49a69ade95739d334bb23610c050e22e66751083053100",
+    pade := root / "data/certs/U2_plus_shift50.kpw1",
+    padeSha256 := "f7f9e241bbbb9bce6df8cd06dec9d1aed0a84f9895f52cb1141c550a9628dcfb",
     eig := none,
     eigSha256 := none,
     order := 23646, degree := 23646,
@@ -74,6 +86,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "a2258bc6ad37442592c1d8a037aa4ba807b38d7c5dbde64a2307d86b2ff98faa",
     cert := root / "data/certs/U2_minus_shift50.kwc2",
     certSha256 := "0a9ecde164fd7a9fdc99e48576696d752bec017282e5a2ec7c29cd75ac917d7f",
+    pade := root / "data/certs/U2_minus_shift50.kpw1",
+    padeSha256 := "1af8dbaaf3191a3a5aa41995cf3e4e7ecfbfa33225c70512fd6c56661014173d",
     eig := none,
     eigSha256 := none,
     order := 23552, degree := 23552,
@@ -246,6 +260,14 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   let certBytes ← readBin e.cert
   verifySha256 e.cert e.certSha256 certBytes
   let cert ← exceptToIO s!"certificate {e.cert}" (parseRankCertificate certBytes)
+  let padeBytes ← readBin e.pade
+  verifySha256 e.pade e.padeSha256 padeBytes
+  let pade ← exceptToIO s!"Padé witness {e.pade}" (parsePadeWitness padeBytes)
+  if pade.degree != cert.degree then
+    throw <| IO.userError
+      s!"Padé witness degree mismatch for {e.pade}: got {pade.degree}, expected {cert.degree}"
+  if pade.certificateHash != fnv64Bytes certBytes then
+    throw <| IO.userError s!"source certificate hash mismatch for {e.pade}"
   let c0 := cert.connectionLeadingCoefficient
   if c0.a != 1 || c0.b != 0 then
     throw <| IO.userError
@@ -262,6 +284,10 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   if recurrenceBad != 0 then
     throw <| IO.userError
       s!"extra recurrence check failed for {e.cert}: {recurrenceBad} bad moments"
+  let padeBezoutBad := pade.bezoutBad cert
+  if padeBezoutBad != 0 then
+    throw <| IO.userError
+      s!"Padé Bézout identity failed for {e.pade}: {padeBezoutBad} bad coefficients"
   if cert.n != e.order || cert.degree != e.degree ||
       cN.a != e.constantA || cN.b != e.constantB ||
       cert.border != e.border then
@@ -322,7 +348,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then

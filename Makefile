@@ -1,14 +1,19 @@
 CXX ?= g++
 CXXFLAGS ?= -O3 -std=c++17 -DNDEBUG
 OMPFLAGS ?= -fopenmp
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+MACOS_SDK := $(shell xcrun --show-sdk-path)
+CXXFLAGS += -I$(MACOS_SDK)/usr/include/c++/v1 -isysroot $(MACOS_SDK)
+endif
 BIN := build/bin
 DATA := data
 REGEN := build/regenerated
 
 PROGRAMS := transfer_generator extract_blocks sanity_counts bruteforce_5x4 \
-            closed_factor verify_visible wiedemann_ext verify_rank_cert
+            closed_factor verify_visible wiedemann_ext verify_rank_cert pade_witness
 
-.PHONY: all clean sanity visible-check rank-check verify regen-check certs-regenerate hashes
+.PHONY: all clean sanity visible-check rank-check verify regen-check certs-regenerate pade-witnesses hashes
 
 all: $(addprefix $(BIN)/,$(PROGRAMS))
 
@@ -38,6 +43,9 @@ $(BIN)/wiedemann_ext: src/wiedemann_ext.cpp | $(BIN)
 
 $(BIN)/verify_rank_cert: src/verify_rank_cert.cpp | $(BIN)
 	$(CXX) $(CXXFLAGS) $(OMPFLAGS) $< -o $@
+
+$(BIN)/pade_witness: src/pade_witness.cpp | $(BIN)
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 sanity: all
 	$(BIN)/bruteforce_5x4
@@ -76,6 +84,15 @@ certs-regenerate: all
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U1_minus.kmc normal 1 $(DATA)/certs/U1_minus_shift50.kwc2
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U2_plus.kmc normal 1 $(DATA)/certs/U2_plus_shift50.kwc2
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U2_minus.kmc normal 1 $(DATA)/certs/U2_minus_shift50.kwc2
+	$(MAKE) pade-witnesses
+
+pade-witnesses: $(BIN)/pade_witness
+	$(BIN)/pade_witness $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_border.kpw1
+	$(BIN)/pade_witness $(DATA)/certs/Trel_minus_shift50.kwc2 $(DATA)/certs/Trel_minus_shift50.kpw1
+	$(BIN)/pade_witness $(DATA)/certs/U1_plus_shift50.kwc2 $(DATA)/certs/U1_plus_shift50.kpw1
+	$(BIN)/pade_witness $(DATA)/certs/U1_minus_shift50.kwc2 $(DATA)/certs/U1_minus_shift50.kpw1
+	$(BIN)/pade_witness $(DATA)/certs/U2_plus_shift50.kwc2 $(DATA)/certs/U2_plus_shift50.kpw1
+	$(BIN)/pade_witness $(DATA)/certs/U2_minus_shift50.kwc2 $(DATA)/certs/U2_minus_shift50.kpw1
 
 hashes:
 	sha256sum -c SHA256SUMS

@@ -111,6 +111,8 @@ In brief, the Lean executable:
   restricted `Trel_plus` eigenvector;
 - recomputes all `2N + 32` Wiedemann/Krylov moments from the actual sparse
   matrices for all six rank certificates when run in full mode;
+- checks compact Padé/Bézout witnesses for all six rank certificates on every
+  run, proving the stored moment sequence has no shorter scalar recurrence;
 - reruns Berlekamp--Massey over the first `2N` stored moments and checks that
   the resulting full-degree connection polynomials match the stored
   coefficients;
@@ -204,6 +206,7 @@ make certs-regenerate    # overwrites data/certs/*, then compare with sha256sum 
 | `src/closed_factor.cpp` | Constructs the visible `50`-eigenvector |
 | `src/verify_visible.cpp` | Deterministic check that `1 - 50z` is visible in the closed scalar denominator |
 | `src/wiedemann_ext.cpp` | Exact certificate generator over `F_(101^2)` |
+| `src/pade_witness.cpp` | Generates compact Padé/Bézout minimality witnesses |
 | `src/verify_rank_cert.cpp` | Independent exact certificate verifier |
 | `LEAN.md`, `KnuthFasc8aEx210/` | Lean 4 theorem and certificate-file verifier |
 | `lakefile.lean`, `lean-toolchain` | Pinned Lean/Lake project configuration |
@@ -217,6 +220,7 @@ All integer fields are little-endian.
 - `KMV101` — eigenvector and nonzero pivot.
 - `KMP101` — polynomial used for the visible factor.
 - `KMW2CERT` — rank certificate header, Krylov moments, and BM connection polynomial.
+- `KPB101W1` — Padé/Bézout witness bound to a `KMW2CERT` source hash.
 
 `SHA256SUMS` covers every source, matrix, and certificate in the release.
 

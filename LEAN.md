@@ -35,7 +35,7 @@ lake build
 The executable `knuth_cert_check` reads the actual binary certificate files from
 this repository checkout and checks:
 
-* `KMP101`, `KMV101`, `KMW2CERT`, and `KMC201` magic/version fields;
+* `KMP101`, `KMV101`, `KMW2CERT`, `KPB101W1`, and `KMC201` magic/version fields;
 * Lean-computed SHA-256 hashes for the consumed matrix, certificate,
   polynomial, and eigenvector files against the upstream `SHA256SUMS` values;
 * visible-factor files `Tall_plus.kmc`, `Tall_finish.vec`, `visible76.poly`,
@@ -43,6 +43,10 @@ this repository checkout and checks:
 * exact dimensions, term counts, degrees, and nonzero constant coefficients;
 * the six rank-certificate constants listed in the upstream proof;
 * the stored `KMW2CERT` connection-polynomial prefix `1`;
+* on every run, the exact Padé/Bézout identity `U D + V R = 1` from each
+  compact `.kpw1` witness, where `D` is the stored connection polynomial and
+  `R` is recomputed from the first `2N` moments; this certifies that no shorter
+  scalar recurrence exists without relying on Berlekamp--Massey replay;
 * a Lean replay of Berlekamp--Massey on the first `2N` stored moments in each
   rank certificate, checking that the resulting full-degree connection
   polynomial exactly matches the stored coefficients;
@@ -75,7 +79,8 @@ this repository checkout and checks:
   sparse matrix, checking `(Trel_plus - 50I)v = 0` over `F_101`;
 * exact file lengths with no trailing bytes;
 * the FNV-64 matrix/eigenvector hashes embedded in `.kwc2` files, binding each
-  certificate to the actual `.kmc` matrix and `.vec` eigenvector bytes.
+  certificate to the actual `.kmc` matrix and `.vec` eigenvector bytes, and the
+  FNV-64 source-certificate hash embedded in each `.kpw1` witness.
 
 Run:
 
@@ -120,14 +125,15 @@ Expected output includes:
 ```text
 PASS Lean parse visible files: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, visible_prefix_steps=2, visible_prefix_bare=0, eig_n=16831, pivot=0, pivot_value=37, sha256=ok
 PASS Lean full visible factor: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, r_bare=67, v_bare=67, eigen76_bad=0, eigen50_bad=0, restricted_mismatch=0, pivot=0, pivot_value=37, sha256=ok
-PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, eigen_residual_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
+PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, pade_bezout_bad=0, eigen_residual_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
 ...
 Lean certificate-file checks completed.
 ```
 
 This is a real Lean-side check of the actual certificate files, including the
-full visible-factor replay and a full Berlekamp--Massey replay over the stored
-rank-certificate moments. In `--full` mode, the Lean executable also recomputes
+full visible-factor replay, exact Padé/Bézout checks, and a full
+Berlekamp--Massey replay over the stored rank-certificate moments. In `--full`
+mode, the Lean executable also recomputes
 all `2N + 32` Wiedemann moments from the actual sparse matrices for all six rank
 certificates.
 

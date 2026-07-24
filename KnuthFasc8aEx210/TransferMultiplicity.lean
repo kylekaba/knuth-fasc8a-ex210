@@ -225,6 +225,85 @@ def baseOpenBlockPowerSeriesProduct
   [tPlus, tMinus, u1Plus, u1Minus, u2Plus, u2Minus, tPlus,
     tMinus].prod.reverse
 
+/-- Native `F₁₀₁` block multiplicities assemble directly to visible-factor
+multiplicity two; no scalar-extension comparison remains in this theorem. -/
+theorem baseOpenBlockPowerSeriesProduct_visibleFactor_emultiplicity_eq_two_of_roots
+    (tPlus tMinus u1Plus u1Minus u2Plus u2Minus : ModPolynomial)
+    (tPlus_ne : tPlus ≠ 0) (tMinus_ne : tMinus ≠ 0)
+    (u1Plus_ne : u1Plus ≠ 0) (u1Minus_ne : u1Minus ≠ 0)
+    (u2Plus_ne : u2Plus ≠ 0) (u2Minus_ne : u2Minus ≠ 0)
+    (tPlus_one : tPlus.rootMultiplicity (50 : F101) = 1)
+    (tMinus_zero : tMinus.rootMultiplicity (50 : F101) = 0)
+    (u1Plus_zero : u1Plus.rootMultiplicity (50 : F101) = 0)
+    (u1Minus_zero : u1Minus.rootMultiplicity (50 : F101) = 0)
+    (u2Plus_zero : u2Plus.rootMultiplicity (50 : F101) = 0)
+    (u2Minus_zero : u2Minus.rootMultiplicity (50 : F101) = 0) :
+    emultiplicity visibleFactor
+      (baseOpenBlockPowerSeriesProduct tPlus tMinus u1Plus u1Minus
+        u2Plus u2Minus) = 2 := by
+  let product := [tPlus, tMinus, u1Plus, u1Minus, u2Plus, u2Minus,
+    tPlus, tMinus].prod
+  have product_ne : product ≠ 0 := by
+    apply List.prod_ne_zero
+    intro zero_mem
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at zero_mem
+    rcases zero_mem with h | h | h | h | h | h | h | h
+    · exact tPlus_ne h.symm
+    · exact tMinus_ne h.symm
+    · exact u1Plus_ne h.symm
+    · exact u1Minus_ne h.symm
+    · exact u2Plus_ne h.symm
+    · exact u2Minus_ne h.symm
+    · exact tPlus_ne h.symm
+    · exact tMinus_ne h.symm
+  have reverse_ne : product.reverse ≠ 0 := by
+    simpa only [Ne, reverse_eq_zero] using product_ne
+  rw [baseOpenBlockPowerSeriesProduct,
+    visibleFactor_emultiplicity_eq_rootMultiplicity _ reverse_ne]
+  have inverse_fifty : (50 : F101)⁻¹ = 99 := by native_decide
+  rw [← inverse_fifty, rootMultiplicity_reverse_inv product (50 : F101)
+    product_ne (by native_decide)]
+  rw [rootMultiplicity_list_prod (50 : F101)]
+  · simp [tPlus_one, tMinus_zero, u1Plus_zero, u1Minus_zero,
+      u2Plus_zero, u2Minus_zero]
+  · intro p p_mem
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at p_mem
+    rcases p_mem with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      assumption
+
+/-- Operator-level native-field assembly theorem consumed by the six concrete
+CSR certificate conclusions. -/
+theorem baseOpenBlockOperators_visibleFactor_emultiplicity_eq_two
+    {nTp nTm nU1p nU1m nU2p nU2m : ℕ}
+    (tPlus : Module.End F101 (Fin nTp → F101))
+    (tMinus : Module.End F101 (Fin nTm → F101))
+    (u1Plus : Module.End F101 (Fin nU1p → F101))
+    (u1Minus : Module.End F101 (Fin nU1m → F101))
+    (u2Plus : Module.End F101 (Fin nU2p → F101))
+    (u2Minus : Module.End F101 (Fin nU2m → F101))
+    (tPlus_one : tPlus.charpoly.rootMultiplicity (50 : F101) = 1)
+    (tMinus_zero : tMinus.charpoly.rootMultiplicity (50 : F101) = 0)
+    (u1Plus_zero : u1Plus.charpoly.rootMultiplicity (50 : F101) = 0)
+    (u1Minus_zero : u1Minus.charpoly.rootMultiplicity (50 : F101) = 0)
+    (u2Plus_zero : u2Plus.charpoly.rootMultiplicity (50 : F101) = 0)
+    (u2Minus_zero : u2Minus.charpoly.rootMultiplicity (50 : F101) = 0) :
+    emultiplicity visibleFactor
+      (baseOpenBlockPowerSeriesProduct tPlus.charpoly tMinus.charpoly
+        u1Plus.charpoly u1Minus.charpoly u2Plus.charpoly u2Minus.charpoly) = 2 := by
+  apply baseOpenBlockPowerSeriesProduct_visibleFactor_emultiplicity_eq_two_of_roots
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact (LinearMap.charpoly_monic _).ne_zero
+  · exact tPlus_one
+  · exact tMinus_zero
+  · exact u1Plus_zero
+  · exact u1Minus_zero
+  · exact u2Plus_zero
+  · exact u2Minus_zero
+
 /-- The characteristic power-series polynomial corresponding to the
 certified block product.  For a matrix this reversal is `det (1 - X M)`. -/
 def certifiedOpenBlockPowerSeriesProduct

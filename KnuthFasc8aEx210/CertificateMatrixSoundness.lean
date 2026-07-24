@@ -133,6 +133,35 @@ def csrApplyField (matrixBytes : ByteArray) (header : MatrixHeader)
         x ⟨matrixColumnAt matrixBytes header entry, h⟩
     else 0
 
+/-- The same parsed CSR row acting over its native field `F₁₀₁`. -/
+def csrApplyBase (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : Fin header.n → ZMod 101) (row : Fin header.n) : ZMod 101 :=
+  ∑ offset ∈ Finset.range
+      (matrixRowStop matrixBytes header row -
+        matrixRowStart matrixBytes header row),
+    let entry := matrixRowEntry matrixBytes header row offset
+    if h : matrixColumnAt matrixBytes header entry < header.n then
+      matrixValueAt matrixBytes header entry *
+        x ⟨matrixColumnAt matrixBytes header entry, h⟩
+    else 0
+
+/-- Scalar extension of one raw CSR application agrees coordinatewise with
+the certificate-field CSR application. -/
+theorem csrApplyField_algebraMap
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : Fin header.n → ZMod 101) (row : Fin header.n) :
+    csrApplyField matrixBytes header
+        (fun i => algebraMap (ZMod 101) CertificateField (x i)) row =
+      algebraMap (ZMod 101) CertificateField
+        (csrApplyBase matrixBytes header x row) := by
+  simp only [csrApplyField, csrApplyBase, map_sum]
+  apply Finset.sum_congr rfl
+  intro offset offset_mem
+  by_cases column_valid : matrixColumnAt matrixBytes header
+      (matrixRowEntry matrixBytes header row offset) < header.n
+  · simp [column_valid, map_mul]
+  · simp [column_valid]
+
 /-- Mathematical linear operator represented by a parsed CSR matrix. -/
 def csrLinearMap (matrixBytes : ByteArray) (header : MatrixHeader) :
     Module.End CertificateField (Fin header.n → CertificateField) where
@@ -156,11 +185,77 @@ def csrLinearMap (matrixBytes : ByteArray) (header : MatrixHeader) :
     split_ifs <;> simp_all
     ring
 
+/-- Mathematical linear operator represented by the raw CSR matrix over
+`F₁₀₁`. -/
+def csrLinearMapBase (matrixBytes : ByteArray) (header : MatrixHeader) :
+    Module.End (ZMod 101) (Fin header.n → ZMod 101) where
+  toFun x := csrApplyBase matrixBytes header x
+  map_add' x y := by
+    funext row
+    classical
+    simp only [csrApplyBase, Pi.add_apply]
+    rw [← Finset.sum_add_distrib]
+    apply Finset.sum_congr rfl
+    intro entry entry_mem
+    split_ifs <;> simp_all [mul_add]
+  map_smul' c x := by
+    funext row
+    classical
+    simp only [csrApplyBase, Pi.smul_apply, RingHom.id_apply]
+    change _ = c * _
+    rw [Finset.mul_sum]
+    apply Finset.sum_congr rfl
+    intro entry entry_mem
+    split_ifs <;> simp_all
+    ring
+
 /-- The shifted operator `M - 50 I` used by every rank certificate. -/
 def shiftedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader) :
     Module.End CertificateField (Fin header.n → CertificateField) :=
   csrLinearMap matrixBytes header -
     (50 : CertificateField) • LinearMap.id
+
+/-- Native `F₁₀₁` shifted operator represented by `M - 50I`. -/
+def shiftedCSRLinearMapBase (matrixBytes : ByteArray) (header : MatrixHeader) :
+    Module.End (ZMod 101) (Fin header.n → ZMod 101) :=
+  csrLinearMapBase matrixBytes header -
+    (50 : ZMod 101) • LinearMap.id
+
+theorem shiftedCSRLinearMap_algebraMap
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : Fin header.n → ZMod 101) :
+    shiftedCSRLinearMap matrixBytes header
+        (fun i => algebraMap (ZMod 101) CertificateField (x i)) =
+      fun row => algebraMap (ZMod 101) CertificateField
+        (shiftedCSRLinearMapBase matrixBytes header x row) := by
+  funext row
+  rw [shiftedCSRLinearMap, shiftedCSRLinearMapBase]
+  change csrApplyField matrixBytes header
+      (fun i => algebraMap (ZMod 101) CertificateField (x i)) row -
+      (50 : CertificateField) * algebraMap (ZMod 101) CertificateField (x row) =
+    algebraMap (ZMod 101) CertificateField
+      (csrApplyBase matrixBytes header x row - (50 : ZMod 101) * x row)
+  rw [csrApplyField_algebraMap, map_sub, map_mul]
+  rfl
+
+/-- Injectivity after scalar extension implies injectivity of the native
+`F₁₀₁` shifted operator. -/
+theorem shiftedCSRLinearMapBase_injective_of_field_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (field_injective : Function.Injective
+      (shiftedCSRLinearMap matrixBytes header)) :
+    Function.Injective (shiftedCSRLinearMapBase matrixBytes header) := by
+  intro x y base_equal
+  have mapped_equal : shiftedCSRLinearMap matrixBytes header
+        (fun i => algebraMap (ZMod 101) CertificateField (x i)) =
+      shiftedCSRLinearMap matrixBytes header
+        (fun i => algebraMap (ZMod 101) CertificateField (y i)) := by
+    rw [shiftedCSRLinearMap_algebraMap,
+      shiftedCSRLinearMap_algebraMap, base_equal]
+  have vectors_equal := field_injective mapped_equal
+  funext i
+  exact (algebraMap (ZMod 101) CertificateField).injective
+    (congrFun vectors_equal i)
 
 /-- Pointwise diagonal multiplication by an encoded field vector. -/
 def encodedDiagonalLinearMap (diagonal : ByteArray) (n : ℕ) :
@@ -263,11 +358,10 @@ theorem shiftedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
 
 /-- An injective shifted operator has no corresponding characteristic root. -/
 theorem charpoly_rootMultiplicity_eq_zero_of_shift_injective
-    {n : ℕ} (f : Module.End CertificateField (Fin n → CertificateField))
-    (mu : CertificateField)
+    {K : Type*} [Field K] {n : ℕ} (f : Module.End K (Fin n → K))
+    (mu : K)
     (shift_injective : Function.Injective
-      (f - mu • (1 : Module.End CertificateField
-        (Fin n → CertificateField)))) :
+      (f - mu • (1 : Module.End K (Fin n → K)))) :
     f.charpoly.rootMultiplicity mu = 0 := by
   apply rootMultiplicity_eq_zero
   intro root
@@ -290,14 +384,41 @@ theorem csr_charpoly_rootMultiplicity_fifty_eq_zero_of_checked_counters
     matrixBytes header dR dL dR_canonical_bad dR_zero_bad
       preconditioned_injective
 
+/-- The same checked certificate proves absence of eigenvalue `50` already
+over the native field `F₁₀₁`, not merely after scalar extension. -/
+theorem csrLinearMapBase_charpoly_rootMultiplicity_fifty_eq_zero_of_checked_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader) (dR dL : ByteArray)
+    (preconditioned_injective : Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL))
+    (dR_canonical_bad : encodedVectorCanonicalBad dR header.n = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR header.n = 0) :
+    (csrLinearMapBase matrixBytes header).charpoly.rootMultiplicity
+      (50 : ZMod 101) = 0 := by
+  apply charpoly_rootMultiplicity_eq_zero_of_shift_injective
+  apply shiftedCSRLinearMapBase_injective_of_field_injective
+  exact shiftedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+    matrixBytes header dR dL dR_canonical_bad dR_zero_bad
+      preconditioned_injective
+
 /-- Interpret the prime-field eigenvector bytes in the extension field. -/
 def encodedEigenVector (eig : EigenvectorFile) (n : ℕ) :
     Fin n → CertificateField :=
   fun row => algebraMap (ZMod 101) CertificateField (eigenValueAt eig row)
 
+/-- Native `F₁₀₁` interpretation of the stored eigenvector. -/
+def encodedEigenVectorBase (eig : EigenvectorFile) (n : ℕ) :
+    Fin n → ZMod 101 :=
+  fun row => eigenValueAt eig row
+
 /-- Coordinate functional used as the bottom row of the bordered matrix. -/
 def coordinateLinearMap {n : ℕ} (pivot : Fin n) :
     (Fin n → CertificateField) →ₗ[CertificateField] CertificateField where
+  toFun x := x pivot
+  map_add' _ _ := rfl
+  map_smul' _ _ := rfl
+
+def coordinateLinearMapBase {n : ℕ} (pivot : Fin n) :
+    (Fin n → ZMod 101) →ₗ[ZMod 101] ZMod 101 where
   toFun x := x pivot
   map_add' _ _ := rfl
   map_smul' _ _ := rfl
@@ -354,6 +475,91 @@ def borderedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
       rw [shifted_smul]
       ring
 
+/-- Native `F₁₀₁` bordered operator represented by the same matrix and
+eigenvector bytes. -/
+def borderedCSRLinearMapBase (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) :
+    Module.End (ZMod 101) (Fin (header.n + 1) → ZMod 101) where
+  toFun x := Fin.lastCases (x pivot.castSucc) (fun row =>
+    shiftedCSRLinearMapBase matrixBytes header (fun col => x col.castSucc) row +
+      x (Fin.last header.n) * encodedEigenVectorBase eig header.n row)
+  map_add' x y := by
+    funext i
+    refine Fin.lastCases ?_ (fun row => ?_) i
+    · simp
+    · simp only [Fin.lastCases_castSucc, Pi.add_apply]
+      have shifted_add :
+          shiftedCSRLinearMapBase matrixBytes header
+              ((fun col => x col.castSucc) + (fun col => y col.castSucc)) row =
+            shiftedCSRLinearMapBase matrixBytes header
+                (fun col => x col.castSucc) row +
+              shiftedCSRLinearMapBase matrixBytes header
+                (fun col => y col.castSucc) row := by
+        simpa only [Pi.add_apply] using congrFun
+          ((shiftedCSRLinearMapBase matrixBytes header).map_add
+            (fun col => x col.castSucc) (fun col => y col.castSucc)) row
+      change shiftedCSRLinearMapBase matrixBytes header
+          (fun col => x col.castSucc + y col.castSucc) row + _ = _
+      rw [show (fun col : Fin header.n =>
+          x col.castSucc + y col.castSucc) =
+        (fun col => x col.castSucc) + (fun col => y col.castSucc) by rfl]
+      rw [shifted_add]
+      ring
+  map_smul' c x := by
+    funext i
+    refine Fin.lastCases ?_ (fun row => ?_) i
+    · simp
+    · simp only [Fin.lastCases_castSucc, Pi.smul_apply, RingHom.id_apply]
+      have shifted_smul :
+          shiftedCSRLinearMapBase matrixBytes header
+              (c • (fun col => x col.castSucc)) row =
+            c * shiftedCSRLinearMapBase matrixBytes header
+              (fun col => x col.castSucc) row := by
+        simpa only [Pi.smul_apply, RingHom.id_apply, smul_eq_mul] using congrFun
+          ((shiftedCSRLinearMapBase matrixBytes header).map_smul c
+            (fun col => x col.castSucc)) row
+      change shiftedCSRLinearMapBase matrixBytes header
+          (fun col => c * x col.castSucc) row + _ = _
+      rw [show (fun col : Fin header.n => c * x col.castSucc) =
+        c • (fun col => x col.castSucc) by rfl]
+      rw [shifted_smul]
+      ring
+
+theorem borderedCSRLinearMap_algebraMap
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (x : Fin (header.n + 1) → ZMod 101) :
+    borderedCSRLinearMap matrixBytes header eig pivot
+        (fun i => algebraMap (ZMod 101) CertificateField (x i)) =
+      fun i => algebraMap (ZMod 101) CertificateField
+        (borderedCSRLinearMapBase matrixBytes header eig pivot x i) := by
+  funext i
+  refine Fin.lastCases ?_ (fun row => ?_) i
+  · simp [borderedCSRLinearMap, borderedCSRLinearMapBase]
+  · simp only [borderedCSRLinearMap, borderedCSRLinearMapBase,
+      LinearMap.coe_mk, AddHom.coe_mk, Fin.lastCases_castSucc]
+    rw [shiftedCSRLinearMap_algebraMap]
+    simp [encodedEigenVector, encodedEigenVectorBase, map_add, map_mul]
+
+theorem borderedCSRLinearMapBase_injective_of_field_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (field_injective : Function.Injective
+      (borderedCSRLinearMap matrixBytes header eig pivot)) :
+    Function.Injective
+      (borderedCSRLinearMapBase matrixBytes header eig pivot) := by
+  intro x y base_equal
+  have mapped_equal : borderedCSRLinearMap matrixBytes header eig pivot
+        (fun i => algebraMap (ZMod 101) CertificateField (x i)) =
+      borderedCSRLinearMap matrixBytes header eig pivot
+        (fun i => algebraMap (ZMod 101) CertificateField (y i)) := by
+    rw [borderedCSRLinearMap_algebraMap,
+      borderedCSRLinearMap_algebraMap, base_equal]
+  have vectors_equal := field_injective mapped_equal
+  funext i
+  exact (algebraMap (ZMod 101) CertificateField).injective
+    (congrFun vectors_equal i)
+
 /-- Diagonally preconditioned bordered operator used by the bordered rank
 certificate. -/
 def preconditionedBorderedCSRLinearMap
@@ -404,9 +610,8 @@ theorem borderedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
 
 /-- Split an `(n+1)`-coordinate vector into its first `n` coordinates and its
 last scalar coordinate. -/
-def finSuccProdLinearEquiv (n : ℕ) :
-    (Fin (n + 1) → CertificateField) ≃ₗ[CertificateField]
-      (Fin n → CertificateField) × CertificateField where
+def finSuccProdLinearEquiv {K : Type*} [Field K] (n : ℕ) :
+    (Fin (n + 1) → K) ≃ₗ[K] (Fin n → K) × K where
   toFun x := (fun i => x i.castSucc, x (Fin.last n))
   invFun z := Fin.lastCases z.2 z.1
   left_inv x := by
@@ -457,13 +662,73 @@ theorem borderedOperator_injective_of_borderedCSRLinearMap_injective
       (borderedOperator (shiftedCSRLinearMap matrixBytes header)
         (encodedEigenVector eig header.n) (coordinateLinearMap pivot)) := by
   intro x y equal
-  let e := finSuccProdLinearEquiv header.n
+  let e := finSuccProdLinearEquiv (K := CertificateField) header.n
   apply e.symm.injective
   apply injective
   apply e.injective
   rw [finSuccProdLinearEquiv_borderedCSRLinearMap,
     finSuccProdLinearEquiv_borderedCSRLinearMap]
   simpa [e] using equal
+
+theorem finSuccProdLinearEquiv_borderedCSRLinearMapBase
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (x : Fin (header.n + 1) → ZMod 101) :
+    finSuccProdLinearEquiv header.n
+        (borderedCSRLinearMapBase matrixBytes header eig pivot x) =
+      borderedOperator (shiftedCSRLinearMapBase matrixBytes header)
+        (encodedEigenVectorBase eig header.n) (coordinateLinearMapBase pivot)
+        (finSuccProdLinearEquiv header.n x) := by
+  apply Prod.ext
+  · funext row
+    simp [finSuccProdLinearEquiv, borderedCSRLinearMapBase, borderedOperator,
+      coordinateLinearMapBase, Fin.lastCases_castSucc]
+  · simp [finSuccProdLinearEquiv, borderedCSRLinearMapBase, borderedOperator,
+      coordinateLinearMapBase, Fin.lastCases_last]
+
+theorem borderedOperatorBase_injective_of_borderedCSRLinearMapBase_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (injective : Function.Injective
+      (borderedCSRLinearMapBase matrixBytes header eig pivot)) :
+    Function.Injective
+      (borderedOperator (shiftedCSRLinearMapBase matrixBytes header)
+        (encodedEigenVectorBase eig header.n)
+        (coordinateLinearMapBase pivot)) := by
+  intro x y equal
+  let e := finSuccProdLinearEquiv (K := ZMod 101) header.n
+  apply e.symm.injective
+  apply injective
+  apply e.injective
+  rw [finSuccProdLinearEquiv_borderedCSRLinearMapBase,
+    finSuccProdLinearEquiv_borderedCSRLinearMapBase]
+  simpa [e] using equal
+
+theorem csrLinearMapBase_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (eigen_residual : shiftedCSRLinearMapBase matrixBytes header
+      (encodedEigenVectorBase eig header.n) = 0)
+    (pivot_ne_zero : encodedEigenVectorBase eig header.n pivot ≠ 0)
+    (border_injective : Function.Injective
+      (borderedCSRLinearMapBase matrixBytes header eig pivot)) :
+    (csrLinearMapBase matrixBytes header).charpoly.rootMultiplicity
+      (50 : ZMod 101) = 1 := by
+  have eigenvector : csrLinearMapBase matrixBytes header
+      (encodedEigenVectorBase eig header.n) =
+        (50 : ZMod 101) • encodedEigenVectorBase eig header.n := by
+    have shifted_eq : csrLinearMapBase matrixBytes header
+          (encodedEigenVectorBase eig header.n) -
+        (50 : ZMod 101) • encodedEigenVectorBase eig header.n = 0 := by
+      simpa [shiftedCSRLinearMapBase] using eigen_residual
+    exact sub_eq_zero.mp shifted_eq
+  have abstract_injective :=
+    borderedOperatorBase_injective_of_borderedCSRLinearMapBase_injective
+      matrixBytes header eig pivot border_injective
+  exact charpoly_rootMultiplicity_eq_one_of_bordered_injective
+    (csrLinearMapBase matrixBytes header) (50 : ZMod 101)
+    (encodedEigenVectorBase eig header.n) (coordinateLinearMapBase pivot)
+    eigenvector pivot_ne_zero abstract_injective
 
 /-- The checked bordered CSR operator is already in the exact form required to
 deduce that `50` has algebraic multiplicity one in the unbordered transfer
@@ -1612,6 +1877,61 @@ theorem csr_charpoly_rootMultiplicity_fifty_eq_one_of_checked_counters
     eig header.n pivot eigen_canonical_bad pivot_value_ne_zero
   exact csr_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
     matrixBytes header eig pivot eigen_residual pivot_ne_zero border_injective
+
+/-- The bordered certificate conclusion descended all the way to the native
+`F₁₀₁` CSR characteristic polynomial. -/
+theorem csrLinearMapBase_charpoly_rootMultiplicity_fifty_eq_one_of_checked_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) (dR dL : ByteArray)
+    (preconditioned_injective : Function.Injective
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL))
+    (dR_canonical_bad : encodedVectorCanonicalBad dR (header.n + 1) = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR (header.n + 1) = 0)
+    (csr_column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (csr_row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (eigen_residual_bad : eigenResidualMismatchCount matrixBytes header eig = 0)
+    (eigen_canonical_bad :
+      encodedVectorCanonicalBad (eigenPairBytes eig header.n) header.n = 0)
+    (pivot_value_ne_zero : eigenValueAt eig pivot ≠ 0) :
+    (csrLinearMapBase matrixBytes header).charpoly.rootMultiplicity
+      (50 : ZMod 101) = 1 := by
+  have columns_valid := matrixColumnsValid_of_bad_counts_eq_zero
+    matrixBytes header csr_column_bad csr_row_pointer_bad
+  have field_border_injective :=
+    borderedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+      matrixBytes header eig pivot dR dL dR_canonical_bad dR_zero_bad
+      preconditioned_injective
+  have base_border_injective :=
+    borderedCSRLinearMapBase_injective_of_field_injective
+      matrixBytes header eig pivot field_border_injective
+  have field_residual :=
+    shiftedCSRLinearMap_encodedEigenVector_eq_zero_of_residualCount_eq_zero
+      matrixBytes header eig eigen_residual_bad columns_valid
+  have base_residual : shiftedCSRLinearMapBase matrixBytes header
+      (encodedEigenVectorBase eig header.n) = 0 := by
+    funext row
+    apply (algebraMap (ZMod 101) CertificateField).injective
+    have compatibility := congrFun
+      (shiftedCSRLinearMap_algebraMap matrixBytes header
+        (encodedEigenVectorBase eig header.n)) row
+    change shiftedCSRLinearMap matrixBytes header
+        (encodedEigenVector eig header.n) row =
+      algebraMap (ZMod 101) CertificateField
+        (shiftedCSRLinearMapBase matrixBytes header
+          (encodedEigenVectorBase eig header.n) row) at compatibility
+    rw [field_residual] at compatibility
+    simpa using compatibility.symm
+  have field_pivot_ne_zero := encodedEigenVector_ne_zero_of_canonical_count
+    eig header.n pivot eigen_canonical_bad pivot_value_ne_zero
+  have base_pivot_ne_zero : encodedEigenVectorBase eig header.n pivot ≠ 0 := by
+    intro base_zero
+    apply field_pivot_ne_zero
+    change algebraMap (ZMod 101) CertificateField
+      (encodedEigenVectorBase eig header.n pivot) = 0
+    rw [base_zero, map_zero]
+  exact csrLinearMapBase_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
+    matrixBytes header eig pivot base_residual base_pivot_ne_zero
+      base_border_injective
 
 end
 

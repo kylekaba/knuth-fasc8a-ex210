@@ -162,18 +162,51 @@ theorem visibleFactor_dvd_of_visibleCertificateBad_eq_zero
     (matrixBytes : ByteArray) (header : MatrixHeader)
     (poly : PolynomialFile) (finish : FinishVectorFile)
     (bare : Fin header.n) (q : ModPolynomial)
-    (recurrence : IsForwardRecurrence (csrMatrixBase matrixBytes header)
+    (recurrence : IsEventuallyForwardRecurrence (csrMatrixBase matrixBytes header)
       (coordinateObservation bare) (finishVectorBase finish header.n)
       q.reverse)
     (no_bad : visibleCertificateBad matrixBytes header poly finish bare = 0) :
     visibleFactor ∣ q := by
   have facts := (visibleCertificateBad_eq_zero_iff
     matrixBytes header poly finish bare).mp no_bad
-  apply visibleFactor_dvd_of_visibleCandidate_square_eigenvector
+  apply visibleFactor_dvd_of_visibleCandidate_eventual_recurrence
     (csrMatrixBase matrixBytes header) (coordinateObservation bare)
     (finishVectorBase finish header.n) (polynomialFileBase poly) q recurrence
   · exact facts.1
   · simpa [visibleCertificateV, visibleCertificateR] using facts.2
+
+/-- A passing closed certificate proves visibility in the actual canonical
+reduced scalar transfer denominator; no recurrence premise remains. -/
+theorem visibleFactor_dvd_transferDenominator_of_visibleCertificateBad_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (poly : PolynomialFile) (finish : FinishVectorFile)
+    (bare : Fin header.n)
+    (no_bad : visibleCertificateBad matrixBytes header poly finish bare = 0) :
+    visibleFactor ∣ transferDenominator (csrMatrixBase matrixBytes header)
+      (finishVectorBase finish header.n) (coordinateObservation bare) := by
+  apply visibleFactor_dvd_of_visibleCertificateBad_eq_zero
+    matrixBytes header poly finish bare _
+  · exact transferDenominator_reverse_isEventuallyForwardRecurrence
+      (csrMatrixBase matrixBytes header)
+      (finishVectorBase finish header.n) (coordinateObservation bare)
+  · exact no_bad
+
+/-- Constant-term-one normalization preserves the certificate's visible
+factor. -/
+theorem visibleFactor_dvd_normalizedTransferDenominator_of_visibleCertificateBad_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (poly : PolynomialFile) (finish : FinishVectorFile)
+    (bare : Fin header.n)
+    (no_bad : visibleCertificateBad matrixBytes header poly finish bare = 0) :
+    visibleFactor ∣
+      normalizedTransferDenominator (csrMatrixBase matrixBytes header)
+        (finishVectorBase finish header.n) (coordinateObservation bare) := by
+  apply (normalizedTransferDenominator_associated
+    (csrMatrixBase matrixBytes header)
+    (finishVectorBase finish header.n)
+    (coordinateObservation bare)).dvd_iff_dvd_right.mpr
+  exact visibleFactor_dvd_transferDenominator_of_visibleCertificateBad_eq_zero
+    matrixBytes header poly finish bare no_bad
 
 end
 

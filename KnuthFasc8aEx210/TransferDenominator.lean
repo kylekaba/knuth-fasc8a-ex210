@@ -1,5 +1,6 @@
 import Mathlib.FieldTheory.RatFunc.Basic
 import Mathlib.LinearAlgebra.Matrix.Adjugate
+import Mathlib.RingTheory.PowerSeries.NoZeroDivisors
 import KnuthFasc8aEx210.TransferMultiplicity
 
 /-!
@@ -124,6 +125,311 @@ def IsForwardRecurrence (M : Matrix n n K) (observe start : n → K)
   ∀ k : ℕ, ∑ i ∈ Finset.range (p.natDegree + 1),
     p.coeff i * scalarKrylovSequence M observe start (k + i) = 0
 
+/-- A recurrence that is required only after a fixed prefix.  Reduced rational
+functions may have a polynomial part, so this is the natural interface for a
+canonical denominator. -/
+def IsTailForwardRecurrence (M : Matrix n n K) (observe start : n → K)
+    (p : K[X]) (threshold : ℕ) : Prop :=
+  ∀ k ≥ threshold, ∑ i ∈ Finset.range (p.natDegree + 1),
+    p.coeff i * scalarKrylovSequence M observe start (k + i) = 0
+
+/-- A polynomial is an eventual recurrence when some finite prefix may be
+discarded. -/
+def IsEventuallyForwardRecurrence (M : Matrix n n K)
+    (observe start : n → K) (p : K[X]) : Prop :=
+  ∃ threshold, IsTailForwardRecurrence M observe start p threshold
+
+/-- Reversal converts the usual denominator convolution into the forward
+recurrence convention used for Krylov sequences. -/
+theorem reverseRecurrenceSum_eq_denominatorConvolution
+    (q : K[X]) (sequence : ℕ → K) (k : ℕ)
+    (constant_ne_zero : q.coeff 0 ≠ 0) :
+    (∑ i ∈ Finset.range (q.reverse.natDegree + 1),
+      q.reverse.coeff i * sequence (k + i)) =
+    ∑ i ∈ Finset.range (q.natDegree + 1),
+      q.coeff i * sequence (k + q.natDegree - i) := by
+  have trailing_zero : q.natTrailingDegree = 0 :=
+    natTrailingDegree_eq_zero.mpr (Or.inr constant_ne_zero)
+  have reverse_degree : q.reverse.natDegree = q.natDegree := by
+    rw [reverse_natDegree, trailing_zero, Nat.sub_zero]
+  rw [reverse_degree]
+  conv_rhs =>
+    rw [← Finset.sum_range_reflect]
+  apply Finset.sum_congr rfl
+  intro i hi
+  have i_le : i ≤ q.natDegree := Nat.le_of_lt_succ (Finset.mem_range.mp hi)
+  rw [coeff_reverse, revAt_le i_le]
+  congr 2
+  omega
+
+/-- Formal power series of an arbitrary scalar sequence. -/
+def sequencePowerSeries (sequence : ℕ → K) : PowerSeries K :=
+  PowerSeries.mk sequence
+
+@[simp] theorem sequencePowerSeries_coeff (sequence : ℕ → K) (k : ℕ) :
+    PowerSeries.coeff k (sequencePowerSeries sequence) = sequence k := by
+  simp [sequencePowerSeries]
+
+/-- A polynomial denominator times the sequence series equals a polynomial
+numerator.  This formulation also permits a finite polynomial prefix. -/
+def IsRationalSequenceRepresentation (sequence : ℕ → K)
+    (numerator denominator : K[X]) : Prop :=
+  (denominator : PowerSeries K) * sequencePowerSeries sequence =
+    (numerator : PowerSeries K)
+
+/-- Vector of formal Krylov generating series. -/
+def krylovVectorPowerSeries (M : Matrix n n K) (start : n → K) :
+    n → PowerSeries K :=
+  fun i ↦ PowerSeries.mk fun k ↦ (M ^ k *ᵥ start) i
+
+/-- Formal-power-series version of `1-XM`. -/
+def transferPowerSeriesMatrix (M : Matrix n n K) :
+    Matrix n n (PowerSeries K) :=
+  (1 : Matrix n n (PowerSeries K)) -
+    (PowerSeries.X : PowerSeries K) • M.map PowerSeries.C
+
+omit [DecidableEq n] in
+theorem coeff_map_C_mulVec (M : Matrix n n K)
+    (v : n → PowerSeries K) (k : ℕ) (row : n) :
+    PowerSeries.coeff k ((M.map PowerSeries.C *ᵥ v) row) =
+      (M *ᵥ fun i ↦ PowerSeries.coeff k (v i)) row := by
+  simp [Matrix.mulVec, dotProduct, map_sum, PowerSeries.coeff_C_mul]
+
+/-- The Krylov series vector is the formal inverse action of `1-XM` on the
+constant startup vector. -/
+theorem transferPowerSeriesMatrix_mulVec_krylov
+    (M : Matrix n n K) (start : n → K) :
+    transferPowerSeriesMatrix M *ᵥ krylovVectorPowerSeries M start =
+      fun i ↦ PowerSeries.C (start i) := by
+  rw [transferPowerSeriesMatrix, Matrix.sub_mulVec, Matrix.one_mulVec,
+    Matrix.smul_mulVec]
+  funext row
+  apply PowerSeries.ext
+  intro k
+  cases k with
+  | zero =>
+      simp [krylovVectorPowerSeries, smul_eq_mul]
+  | succ k =>
+      simp only [Pi.sub_apply, Pi.smul_apply, smul_eq_mul, map_sub,
+        PowerSeries.coeff_succ_C, sub_eq_zero]
+      rw [PowerSeries.coeff_succ_X_mul]
+      rw [coeff_map_C_mulVec]
+      simp only [krylovVectorPowerSeries, PowerSeries.coeff_mk]
+      rw [Matrix.mulVec_mulVec, ← pow_succ']
+
+/-- Formal generating series of the observed scalar Krylov sequence. -/
+def scalarKrylovPowerSeries (M : Matrix n n K) (observe start : n → K) :
+    PowerSeries K :=
+  sequencePowerSeries (scalarKrylovSequence M observe start)
+
+theorem scalarKrylovPowerSeries_eq_dotProduct
+    (M : Matrix n n K) (observe start : n → K) :
+    scalarKrylovPowerSeries M observe start =
+      dotProduct (fun i ↦ PowerSeries.C (observe i))
+        (krylovVectorPowerSeries M start) := by
+  apply PowerSeries.ext
+  intro k
+  simp [scalarKrylovPowerSeries, scalarKrylovSequence,
+    sequencePowerSeries, krylovVectorPowerSeries, dotProduct,
+    map_sum, PowerSeries.coeff_C_mul]
+
+omit [Fintype n] in
+theorem transferPolynomialMatrix_map_toPowerSeries (M : Matrix n n K) :
+    (transferPolynomialMatrix M).map
+        Polynomial.coeToPowerSeries.ringHom =
+      transferPowerSeriesMatrix M := by
+  funext i j
+  simp [transferPolynomialMatrix, transferPowerSeriesMatrix,
+    Polynomial.coeToPowerSeries.ringHom_apply,
+    Polynomial.coe_X, Polynomial.coe_C]
+  by_cases h : i = j <;> simp [Matrix.one_apply, h] <;> ring
+
+theorem transferNumerator_toPowerSeries
+    (M : Matrix n n K) (start finish : n → K) :
+    (transferNumerator M start finish : PowerSeries K) =
+      dotProduct (fun i ↦ PowerSeries.C (finish i))
+        (((transferPolynomialMatrix M).adjugate.map
+          Polynomial.coeToPowerSeries.ringHom) *ᵥ
+            (fun i ↦ PowerSeries.C (start i))) := by
+  change Polynomial.coeToPowerSeries.ringHom
+      (transferNumerator M start finish) = _
+  simp [transferNumerator, dotProduct, Matrix.mulVec, map_sum,
+    Polynomial.coe_C]
+  apply Finset.sum_congr rfl
+  intro i _
+  congr 1
+  change Polynomial.coeToPowerSeries.ringHom
+      (∑ j, (transferPolynomialMatrix M).adjugate i j * C (start j)) = _
+  rw [map_sum]
+  simp [Polynomial.coe_C]
+
+/-- The adjugate numerator and characteristic power series represent the
+observed Krylov generating series. -/
+theorem transferNumerator_charpolyRev_representation
+    (M : Matrix n n K) (start finish : n → K) :
+    IsRationalSequenceRepresentation
+      (scalarKrylovSequence M finish start)
+      (transferNumerator M start finish) M.charpolyRev := by
+  let P := transferPolynomialMatrix M
+  let A : Matrix n n (PowerSeries K) :=
+    P.adjugate.map Polynomial.coeToPowerSeries.ringHom
+  have inverse_equation :
+      (P.map Polynomial.coeToPowerSeries.ringHom) *ᵥ
+          krylovVectorPowerSeries M start =
+        fun i ↦ PowerSeries.C (start i) := by
+    rw [transferPolynomialMatrix_map_toPowerSeries]
+    exact transferPowerSeriesMatrix_mulVec_krylov M start
+  have adjugate_equation := congrArg (fun v ↦ A *ᵥ v) inverse_equation
+  rw [Matrix.mulVec_mulVec] at adjugate_equation
+  have matrix_product :
+      A * P.map Polynomial.coeToPowerSeries.ringHom =
+        (M.charpolyRev : PowerSeries K) • 1 := by
+    dsimp [A]
+    rw [← Matrix.map_mul, Matrix.adjugate_mul,
+      transferPolynomialMatrix_det]
+    funext i j
+    by_cases h : i = j <;>
+      simp [h, Polynomial.coeToPowerSeries.ringHom_apply]
+  rw [matrix_product, Matrix.smul_mulVec, Matrix.one_mulVec] at adjugate_equation
+  have observed_equation := congrArg
+    (dotProduct (fun i ↦ PowerSeries.C (finish i))) adjugate_equation
+  rw [dotProduct_smul] at observed_equation
+  rw [← scalarKrylovPowerSeries_eq_dotProduct] at observed_equation
+  rw [← transferNumerator_toPowerSeries] at observed_equation
+  exact observed_equation
+
+/-- Cancellation in the rational function descends to formal power series:
+the canonical reduced denominator and numerator still represent the Krylov
+generating series. -/
+theorem transferDenominator_representation
+    (M : Matrix n n K) (start finish : n → K) :
+    IsRationalSequenceRepresentation
+      (scalarKrylovSequence M finish start)
+      (RatFunc.num (transferRatFunc M start finish))
+      (transferDenominator M start finish) := by
+  let x := transferRatFunc M start finish
+  let q := transferDenominator M start finish
+  let r := RatFunc.num x
+  obtain ⟨h, charpoly_factorization⟩ :=
+    transferDenominator_dvd_charpolyRev M start finish
+  have q_ne : q ≠ 0 := by
+    dsimp [q, transferDenominator]
+    exact RatFunc.denom_ne_zero _
+  have h_ne : h ≠ 0 := by
+    intro h_zero
+    apply charpolyRev_ne_zero M
+    rw [charpoly_factorization, h_zero, mul_zero]
+  have rational_equality :
+      algebraMap K[X] (RatFunc K) (transferNumerator M start finish) /
+          algebraMap K[X] (RatFunc K) M.charpolyRev =
+        algebraMap K[X] (RatFunc K) r /
+          algebraMap K[X] (RatFunc K) q := by
+    calc
+      _ = x := by rfl
+      _ = _ := (RatFunc.num_div_denom x).symm
+  have polynomial_cross_product :
+      transferNumerator M start finish * q = r * M.charpolyRev := by
+    have mapped_charpoly_ne :
+        algebraMap K[X] (RatFunc K) M.charpolyRev ≠ 0 := by
+      rw [← map_zero (algebraMap K[X] (RatFunc K))]
+      exact (RatFunc.algebraMap_injective K).ne (charpolyRev_ne_zero M)
+    have mapped_q_ne : algebraMap K[X] (RatFunc K) q ≠ 0 := by
+      rw [← map_zero (algebraMap K[X] (RatFunc K))]
+      exact (RatFunc.algebraMap_injective K).ne q_ne
+    apply RatFunc.algebraMap_injective K
+    simpa only [map_mul] using
+      (div_eq_div_iff mapped_charpoly_ne mapped_q_ne).mp
+          rational_equality
+  have numerator_factorization :
+      transferNumerator M start finish = r * h := by
+    apply mul_right_cancel₀ q_ne
+    calc
+      transferNumerator M start finish * q = r * M.charpolyRev :=
+        polynomial_cross_product
+      _ = (r * h) * q := by rw [charpoly_factorization]; ring
+  have full_representation :=
+    transferNumerator_charpolyRev_representation M start finish
+  rw [charpoly_factorization, numerator_factorization] at full_representation
+  change ((q * h : K[X]) : PowerSeries K) *
+      scalarKrylovPowerSeries M finish start =
+    ((r * h : K[X]) : PowerSeries K) at full_representation
+  rw [Polynomial.coe_mul, Polynomial.coe_mul] at full_representation
+  have coe_h_ne : (h : PowerSeries K) ≠ 0 := by
+    intro coe_zero
+    apply h_ne
+    apply Polynomial.coe_injective K
+    simpa using coe_zero
+  have cancellable :
+      ((q : PowerSeries K) * scalarKrylovPowerSeries M finish start) *
+          (h : PowerSeries K) =
+        (r : PowerSeries K) * (h : PowerSeries K) := by
+    simpa [mul_assoc, mul_comm, mul_left_comm] using full_representation
+  have reduced_representation := mul_right_cancel₀ coe_h_ne cancellable
+  simpa [IsRationalSequenceRepresentation, scalarKrylovPowerSeries,
+    x, q, r] using reduced_representation
+
+/-- Every power-series rational representation supplies an eventual forward
+recurrence for the reversed denominator. -/
+theorem IsRationalSequenceRepresentation.eventualRecurrence
+    (sequence : ℕ → K) (numerator denominator : K[X])
+    (representation :
+      IsRationalSequenceRepresentation sequence numerator denominator)
+    (constant_ne_zero : denominator.coeff 0 ≠ 0) :
+    ∃ threshold, ∀ k ≥ threshold,
+      ∑ i ∈ Finset.range (denominator.reverse.natDegree + 1),
+        denominator.reverse.coeff i * sequence (k + i) = 0 := by
+  refine ⟨numerator.natDegree + 1, ?_⟩
+  intro k hk
+  rw [reverseRecurrenceSum_eq_denominatorConvolution
+    denominator sequence k constant_ne_zero]
+  let total := k + denominator.natDegree
+  have coefficient_identity := congrArg (PowerSeries.coeff total) representation
+  have numerator_coefficient_zero : numerator.coeff total = 0 := by
+    apply coeff_eq_zero_of_natDegree_lt
+    dsimp [total]
+    omega
+  simp only [PowerSeries.coeff_mul, Polynomial.coeff_coe,
+    sequencePowerSeries_coeff, numerator_coefficient_zero] at coefficient_identity
+  rw [Finset.Nat.sum_antidiagonal_eq_sum_range_succ_mk] at coefficient_identity
+  have range_subset : Finset.range (denominator.natDegree + 1) ⊆
+      Finset.range (total + 1) := by
+    apply Finset.range_mono
+    dsimp [total]
+    omega
+  have truncate :
+      (∑ i ∈ Finset.range (denominator.natDegree + 1),
+        denominator.coeff i * sequence (total - i)) =
+      ∑ i ∈ Finset.range (total + 1),
+        denominator.coeff i * sequence (total - i) := by
+    apply Finset.sum_subset range_subset
+    intro i i_mem i_not_mem
+    have degree_lt_i : denominator.natDegree < i := by
+      simp only [Finset.mem_range, Nat.not_lt] at i_not_mem
+      omega
+    rw [coeff_eq_zero_of_natDegree_lt degree_lt_i, zero_mul]
+  rw [truncate, coefficient_identity]
+
+/-- The canonical reduced transfer denominator itself supplies the eventual
+recurrence needed by the closed visibility proof. -/
+theorem transferDenominator_reverse_isEventuallyForwardRecurrence
+    (M : Matrix n n K) (start finish : n → K) :
+    IsEventuallyForwardRecurrence M finish start
+      (transferDenominator M start finish).reverse := by
+  have representation := transferDenominator_representation M start finish
+  obtain ⟨threshold, recurrence⟩ :=
+    representation.eventualRecurrence
+      (scalarKrylovSequence M finish start)
+      (RatFunc.num (transferRatFunc M start finish))
+      (transferDenominator M start finish)
+      (transferDenominator_coeff_zero_ne_zero M start finish)
+  exact ⟨threshold, recurrence⟩
+
+theorem IsForwardRecurrence.isEventually
+    (M : Matrix n n K) (observe start : n → K) (p : K[X])
+    (recurrence : IsForwardRecurrence M observe start p) :
+    IsEventuallyForwardRecurrence M observe start p := by
+  exact ⟨0, fun k _ ↦ recurrence k⟩
+
 @[simp] theorem scalarKrylovSequence_zero
     (M : Matrix n n K) (observe : n → K) (k : ℕ) :
     scalarKrylovSequence M observe 0 k = 0 := by
@@ -168,6 +474,31 @@ def recurrenceStartSubmodule (M : Matrix n n K) (observe : n → K)
     simp_rw [← mul_assoc, mul_comm (p.coeff _) a, mul_assoc]
     rw [← Finset.mul_sum, hv k, mul_zero]
 
+/-- Startup vectors satisfying a recurrence after one fixed threshold form a
+subspace. -/
+def tailRecurrenceStartSubmodule (M : Matrix n n K) (observe : n → K)
+    (p : K[X]) (threshold : ℕ) : Submodule K (n → K) where
+  carrier := {start | IsTailForwardRecurrence M observe start p threshold}
+  zero_mem' := by
+    intro k _
+    simp
+  add_mem' := by
+    intro u v hu hv
+    change IsTailForwardRecurrence M observe u p threshold at hu
+    change IsTailForwardRecurrence M observe v p threshold at hv
+    change IsTailForwardRecurrence M observe (u + v) p threshold
+    intro k hk
+    simp only [scalarKrylovSequence_add, mul_add, Finset.sum_add_distrib,
+      hu k hk, hv k hk, add_zero]
+  smul_mem' := by
+    intro a v hv
+    change IsTailForwardRecurrence M observe v p threshold at hv
+    change IsTailForwardRecurrence M observe (a • v) p threshold
+    intro k hk
+    simp only [scalarKrylovSequence_smul]
+    simp_rw [← mul_assoc, mul_comm (p.coeff _) a, mul_assoc]
+    rw [← Finset.mul_sum, hv k hk, mul_zero]
+
 theorem scalarKrylovSequence_mulVec_pow
     (M : Matrix n n K) (observe start : n → K) (j k : ℕ) :
     scalarKrylovSequence M observe (M ^ j *ᵥ start) k =
@@ -185,6 +516,16 @@ theorem IsForwardRecurrence.mulVec_pow
   simpa [scalarKrylovSequence_mulVec_pow, add_assoc, add_comm, add_left_comm]
     using recurrence (k + j)
 
+theorem IsTailForwardRecurrence.mulVec_pow
+    (M : Matrix n n K) (observe start : n → K) (p : K[X])
+    (threshold : ℕ)
+    (recurrence : IsTailForwardRecurrence M observe start p threshold)
+    (j : ℕ) :
+    IsTailForwardRecurrence M observe (M ^ j *ᵥ start) p threshold := by
+  intro k hk
+  simpa [scalarKrylovSequence_mulVec_pow, add_assoc, add_comm, add_left_comm]
+    using recurrence (k + j) (hk.trans (Nat.le_add_right k j))
+
 /-- Every vector in the Krylov span of a startup vector inherits all forward
 recurrences of its observed scalar sequence. -/
 theorem IsForwardRecurrence.of_mem_krylovSpan
@@ -197,6 +538,28 @@ theorem IsForwardRecurrence.of_mem_krylovSpan
   apply (Submodule.span_le.mpr ?_) v_mem
   rintro _ ⟨j, rfl⟩
   exact recurrence.mulVec_pow M observe start p j
+
+theorem IsTailForwardRecurrence.of_mem_krylovSpan
+    (M : Matrix n n K) (observe start v : n → K) (p : K[X])
+    (threshold : ℕ)
+    (recurrence : IsTailForwardRecurrence M observe start p threshold)
+    (v_mem : v ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start)) :
+    IsTailForwardRecurrence M observe v p threshold := by
+  apply (show v ∈ tailRecurrenceStartSubmodule M observe p threshold from ?_)
+  apply (Submodule.span_le.mpr ?_) v_mem
+  rintro _ ⟨j, rfl⟩
+  exact recurrence.mulVec_pow M observe start p threshold j
+
+theorem IsEventuallyForwardRecurrence.of_mem_krylovSpan
+    (M : Matrix n n K) (observe start v : n → K) (p : K[X])
+    (recurrence : IsEventuallyForwardRecurrence M observe start p)
+    (v_mem : v ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start)) :
+    IsEventuallyForwardRecurrence M observe v p := by
+  obtain ⟨threshold, recurrence⟩ := recurrence
+  exact ⟨threshold, recurrence.of_mem_krylovSpan
+    M observe start v p threshold v_mem⟩
 
 /-- The Krylov span is invariant under one further application of its
 matrix. -/
@@ -308,18 +671,58 @@ theorem IsForwardRecurrence.isRoot_of_eigenvector
   rw [← Finset.sum_mul, ← Polynomial.eval_eq_sum_range] at recurrence_zero
   exact (mul_eq_zero.mp recurrence_zero).resolve_right visible
 
-/-- Over `F₁₀₁`, an observable eigenvector at eigenvalue `50` turns a
-forward recurrence for the reversed denominator into the factor
-`1 - 50X` of the denominator itself. -/
-theorem visibleFactor_dvd_of_reverse_recurrence_eigenvector
-    (M : Matrix n n F101) (observe v : n → F101) (q : ModPolynomial)
-    (recurrence : IsForwardRecurrence M observe v q.reverse)
-    (eigenvector : M *ᵥ v = (50 : F101) • v)
+/-- An observable nonzero eigenvalue is a root even when the recurrence starts
+only after a finite prefix. -/
+theorem IsEventuallyForwardRecurrence.isRoot_of_eigenvector
+    (M : Matrix n n K) (observe v : n → K) (p : K[X]) (a : K)
+    (recurrence : IsEventuallyForwardRecurrence M observe v p)
+    (eigenvector : M *ᵥ v = a • v)
+    (eigenvalue_ne_zero : a ≠ 0)
     (visible : dotProduct observe v ≠ 0) :
+    p.IsRoot a := by
+  obtain ⟨threshold, recurrence⟩ := recurrence
+  have recurrence_at_threshold := recurrence threshold le_rfl
+  simp only [scalarKrylovSequence_of_eigenvector M observe v a eigenvector]
+    at recurrence_at_threshold
+  have product_zero : a ^ threshold *
+      (p.eval a * dotProduct observe v) = 0 := by
+    rw [Polynomial.eval_eq_sum_range, ← mul_assoc, Finset.mul_sum,
+      Finset.sum_mul]
+    calc
+      ∑ i ∈ Finset.range (p.natDegree + 1),
+          a ^ threshold * (p.coeff i * a ^ i) * dotProduct observe v =
+          ∑ i ∈ Finset.range (p.natDegree + 1),
+            p.coeff i * (a ^ (threshold + i) *
+              dotProduct observe v) := by
+                apply Finset.sum_congr rfl
+                intro i _
+                rw [pow_add]
+                ring
+      _ = 0 := recurrence_at_threshold
+  have evaluation_times_visible : p.eval a * dotProduct observe v = 0 :=
+    (mul_eq_zero.mp product_zero).resolve_left
+      (pow_ne_zero threshold eigenvalue_ne_zero)
+  rw [Polynomial.IsRoot.def]
+  exact (mul_eq_zero.mp evaluation_times_visible).resolve_right visible
+
+theorem IsTailForwardRecurrence.isRoot_of_eigenvector
+    (M : Matrix n n K) (observe v : n → K) (p : K[X]) (a : K)
+    (threshold : ℕ)
+    (recurrence : IsTailForwardRecurrence M observe v p threshold)
+    (eigenvector : M *ᵥ v = a • v)
+    (eigenvalue_ne_zero : a ≠ 0)
+    (visible : dotProduct observe v ≠ 0) :
+    p.IsRoot a := by
+  have eventual : IsEventuallyForwardRecurrence M observe v p :=
+    ⟨threshold, recurrence⟩
+  exact IsEventuallyForwardRecurrence.isRoot_of_eigenvector
+    M observe v p a eventual eigenvector eigenvalue_ne_zero visible
+
+/-- A root `50` of the reversed polynomial is precisely the width-five
+visible factor of the original polynomial. -/
+theorem visibleFactor_dvd_of_reverse_root (q : ModPolynomial)
+    (reverse_root : q.reverse.IsRoot (50 : F101)) :
     visibleFactor ∣ q := by
-  have reverse_root : q.reverse.IsRoot (50 : F101) :=
-    recurrence.isRoot_of_eigenvector M observe v q.reverse 50
-      eigenvector visible
   have ninetyNine_ne_zero : (99 : F101) ≠ 0 := by native_decide
   letI : Invertible (99 : F101) := invertibleOfNonzero ninetyNine_ne_zero
   have ninetyNine_inv : (99 : F101)⁻¹ = 50 := by native_decide
@@ -336,6 +739,20 @@ theorem visibleFactor_dvd_of_reverse_recurrence_eigenvector
     rw [visibleFactor_eq_unit_mul_X_sub_C]
     exact associated_unit_mul_left _ _ scalar_unit
   exact factor_associated.dvd_iff_dvd_left.mpr linear_dvd
+
+/-- Over `F₁₀₁`, an observable eigenvector at eigenvalue `50` turns a
+forward recurrence for the reversed denominator into the factor
+`1 - 50X` of the denominator itself. -/
+theorem visibleFactor_dvd_of_reverse_recurrence_eigenvector
+    (M : Matrix n n F101) (observe v : n → F101) (q : ModPolynomial)
+    (recurrence : IsForwardRecurrence M observe v q.reverse)
+    (eigenvector : M *ᵥ v = (50 : F101) • v)
+    (visible : dotProduct observe v ≠ 0) :
+    visibleFactor ∣ q := by
+  have reverse_root : q.reverse.IsRoot (50 : F101) :=
+    recurrence.isRoot_of_eigenvector M observe v q.reverse 50
+      eigenvector visible
+  exact visibleFactor_dvd_of_reverse_root q reverse_root
 
 /-- Closed-side visibility in the form used by the certificate: it is enough
 for the visible eigenvector to lie in the startup vector's Krylov span. -/
@@ -393,6 +810,34 @@ theorem visibleFactor_dvd_of_visibleCandidate_square_eigenvector
     M observe start g q recurrence
   · exact derived_fifty_eigenvector_of_square_seventySix M _ square_eigenvector
   · exact visible
+
+/-- Eventual-recurrence version used by a canonical reduced rational-function
+denominator; a finite numerator prefix has no effect on visibility. -/
+theorem visibleFactor_dvd_of_visibleCandidate_eventual_recurrence
+    (M : Matrix n n F101) (observe start : n → F101)
+    (g q : ModPolynomial)
+    (recurrence : IsEventuallyForwardRecurrence M observe start q.reverse)
+    (square_eigenvector :
+      let r := evenPolynomialKrylovVector M start g
+      M ^ 2 *ᵥ r = (76 : F101) • r)
+    (visible :
+      let r := evenPolynomialKrylovVector M start g
+      dotProduct observe (r + (99 : F101) • (M *ᵥ r)) ≠ 0) :
+    visibleFactor ∣ q := by
+  let r := evenPolynomialKrylovVector M start g
+  let v := r + (99 : F101) • (M *ᵥ r)
+  have v_mem : v ∈ Submodule.span F101
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start) :=
+    visibleEigenvectorCandidate_mem_krylovSpan M start g
+  have v_recurrence :
+      IsEventuallyForwardRecurrence M observe v q.reverse :=
+    recurrence.of_mem_krylovSpan M observe start v q.reverse v_mem
+  have v_eigenvector : M *ᵥ v = (50 : F101) • v :=
+    derived_fifty_eigenvector_of_square_seventySix M r square_eigenvector
+  have reverse_root : q.reverse.IsRoot (50 : F101) :=
+    v_recurrence.isRoot_of_eigenvector M observe v q.reverse 50
+      v_eigenvector (by native_decide) visible
+  exact visibleFactor_dvd_of_reverse_root q reverse_root
 
 end Recurrences
 

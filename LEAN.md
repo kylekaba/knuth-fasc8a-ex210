@@ -194,7 +194,12 @@ There are two deliberately separate layers:
    finish vector, and polynomial now feed a proof-shaped
    `visibleCertificateBad` counter; zero gives the closed visible-factor
    conclusion directly, while its native implementation runs the existing
-   efficient Horner and CSR evaluator.
+   efficient Horner and CSR evaluator. A formal-power-series proof now shows
+   that the adjugate rational function represents the scalar Krylov series,
+   cancellation preserves that representation for the canonical reduced
+   `RatFunc.denom`, and its reverse is an eventual recurrence. Consequently a
+   zero visible counter proves the factor in the actual normalized reduced
+   transfer denominator without an exposed recurrence assumption.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -206,10 +211,9 @@ binary files. The concrete reflection/SCC decomposition and `Wrel ~= Trel`
 identification, the closed visible-factor replay, and the conversion of runtime
 file checks into proof terms remain on the external side of the boundary. The
 generic transfer-denominator interpretation and the recurrence-to-visible-factor
-argument are now kernel checked. Connecting the reduced denominator to that
-recurrence and proving the byte-level closed residual and observable-coordinate
-checks for the checked-in byte constants remain to be closed. The mathematical
-bad-count-to-factor bridge itself is now complete.
+argument are now kernel checked, including the reduced-denominator recurrence.
+Closing the byte-level visible check for embedded checked-in constants remains;
+the mathematical bad-count-to-normalized-denominator bridge itself is complete.
 
 The certificate-to-nonsingularity bridge is:
 

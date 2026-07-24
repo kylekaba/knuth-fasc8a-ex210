@@ -162,19 +162,20 @@ non-50 singleton blocks add no visible factor, and formalizes the adjugate
 argument that a normalized scalar transfer denominator divides
 `det(I-XM)`. It also proves the closed-side visibility implication: an
 observable `50`-eigenvector annihilated by the reversed denominator recurrence
-forces `1-50X` to divide that denominator. What remains outside the kernel
-theorem is the concrete reflection/SCC decomposition, connecting the reduced
-denominator to that recurrence, replaying the closed byte-level residual and
-observable-coordinate checks as proof terms, and converting the checked-in
-binary results into inhabitants of those hypotheses. The cyclic-span step is
+forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
+denominator is now proved, via formal power series and adjugate cancellation,
+to supply the required eventual recurrence. What remains outside the kernel
+theorem is the concrete reflection/SCC decomposition, closing the byte-level
+checks on embedded checked-in data, and converting the remaining binary
+results into inhabitants of their proof-shaped hypotheses. The cyclic-span step is
 now kernel checked for the exact certificate formula `r=g(M²)beta`, as is the
 derivation of its `50`-eigenvector from the checked `76` square-eigenvector
 relation. A proof-shaped `visibleCertificateBad` counter now gives a direct
 kernel theorem from zero residual/coordinate failures to the visible factor,
-with the existing Horner/CSR replay as its native implementation. Embedding the
-checked-in bytes as closed Lean data and deriving the reduced-denominator
-recurrence remain. Thus the repository is not yet a single end-to-end kernel
-proof from the checked-in bytes.
+with the existing Horner/CSR replay as its native implementation. It now proves
+visibility directly in the actual normalized reduced transfer denominator.
+Embedding the checked-in bytes as closed Lean data remains. Thus the repository
+is not yet a single end-to-end kernel proof from the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

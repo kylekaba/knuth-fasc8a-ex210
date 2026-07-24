@@ -1,4 +1,6 @@
 import Mathlib.LinearAlgebra.FiniteDimensional.Basic
+import Mathlib.Algebra.Polynomial.Div
+import Mathlib.LinearAlgebra.Eigenspace.Charpoly
 import KnuthFasc8aEx210.CertificateFieldEncoding
 import KnuthFasc8aEx210.CertificatePadeSoundness
 import KnuthFasc8aEx210.BorderLemma
@@ -13,6 +15,8 @@ linear operator over `CertificateField`.
 namespace KnuthFasc8aEx210
 
 noncomputable section
+
+open Polynomial
 
 /-- Interpret `n` consecutive byte pairs as a vector over the certificate
 field. -/
@@ -222,6 +226,69 @@ def preconditionedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
   (encodedDiagonalLinearMap dL header.n).comp
     ((shiftedCSRLinearMap matrixBytes header).comp
       (encodedDiagonalLinearMap dR header.n))
+
+theorem shiftedCSRLinearMap_injective_of_preconditioned_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader) (dR dL : ByteArray)
+    (right_surjective : Function.Surjective
+      (encodedDiagonalLinearMap dR header.n))
+    (preconditioned_injective : Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL)) :
+    Function.Injective (shiftedCSRLinearMap matrixBytes header) := by
+  intro x y middle_equal
+  obtain ⟨x', rfl⟩ := right_surjective x
+  obtain ⟨y', rfl⟩ := right_surjective y
+  apply congrArg (encodedDiagonalLinearMap dR header.n)
+  apply preconditioned_injective
+  change encodedDiagonalLinearMap dL header.n
+      (shiftedCSRLinearMap matrixBytes header
+        (encodedDiagonalLinearMap dR header.n x')) =
+    encodedDiagonalLinearMap dL header.n
+      (shiftedCSRLinearMap matrixBytes header
+        (encodedDiagonalLinearMap dR header.n y'))
+  rw [middle_equal]
+
+theorem shiftedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader) (dR dL : ByteArray)
+    (dR_canonical_bad : encodedVectorCanonicalBad dR header.n = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR header.n = 0)
+    (preconditioned_injective : Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL)) :
+    Function.Injective (shiftedCSRLinearMap matrixBytes header) := by
+  apply shiftedCSRLinearMap_injective_of_preconditioned_injective
+    matrixBytes header dR dL
+  · apply encodedDiagonalLinearMap_surjective
+    exact encodedVector_ne_zero_of_bad_counts_eq_zero dR header.n
+      dR_canonical_bad dR_zero_bad
+  · exact preconditioned_injective
+
+/-- An injective shifted operator has no corresponding characteristic root. -/
+theorem charpoly_rootMultiplicity_eq_zero_of_shift_injective
+    {n : ℕ} (f : Module.End CertificateField (Fin n → CertificateField))
+    (mu : CertificateField)
+    (shift_injective : Function.Injective
+      (f - mu • (1 : Module.End CertificateField
+        (Fin n → CertificateField)))) :
+    f.charpoly.rootMultiplicity mu = 0 := by
+  apply rootMultiplicity_eq_zero
+  intro root
+  have has_eigenvalue : f.HasEigenvalue mu :=
+    (Module.End.hasEigenvalue_iff_isRoot_charpoly f mu).2 root
+  rw [Module.End.hasEigenvalue_iff, Module.End.eigenspace_def,
+    LinearMap.ker_eq_bot.mpr shift_injective] at has_eigenvalue
+  exact has_eigenvalue rfl
+
+theorem csr_charpoly_rootMultiplicity_fifty_eq_zero_of_checked_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader) (dR dL : ByteArray)
+    (preconditioned_injective : Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL))
+    (dR_canonical_bad : encodedVectorCanonicalBad dR header.n = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR header.n = 0) :
+    (csrLinearMap matrixBytes header).charpoly.rootMultiplicity
+      (50 : CertificateField) = 0 := by
+  apply charpoly_rootMultiplicity_eq_zero_of_shift_injective
+  exact shiftedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+    matrixBytes header dR dL dR_canonical_bad dR_zero_bad
+      preconditioned_injective
 
 /-- Interpret the prime-field eigenvector bytes in the extension field. -/
 def encodedEigenVector (eig : EigenvectorFile) (n : ℕ) :

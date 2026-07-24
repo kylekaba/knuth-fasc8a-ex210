@@ -1,4 +1,5 @@
 import Mathlib.Algebra.Polynomial.Degree.IsMonicOfDegree
+import Mathlib.Algebra.Polynomial.OfFn
 import Mathlib.LinearAlgebra.Charpoly.Basic
 import Mathlib.LinearAlgebra.Eigenspace.Minpoly
 
@@ -25,6 +26,13 @@ noncomputable section
 
 variable {K V : Type*} [Field K] [AddCommGroup V] [Module K V]
 
+local instance : DecidableEq K := Classical.decEq K
+
+/-- The scalar moment sequence used by a Wiedemann certificate. -/
+def scalarKrylovMoment (u : V →ₗ[K] K) (A : Module.End K V) (w : V)
+    (k : ℕ) : K :=
+  u ((A ^ k) w)
+
 /-- `p` annihilates the first `shifts` scalar Krylov tests. -/
 def AnnihilatesMomentPrefix (u : V →ₗ[K] K) (A : Module.End K V) (w : V)
     (shifts : ℕ) (p : K[X]) : Prop :=
@@ -37,6 +45,117 @@ def HasScalarKrylovDegree (u : V →ₗ[K] K) (A : Module.End K V) (w : V)
     (shifts degree : ℕ) : Prop :=
   ∀ p : K[X], AnnihilatesMomentPrefix u A w shifts p → p ≠ 0 →
     degree ≤ p.natDegree
+
+/-- Pure sequence form of the lower-bound postcondition expected from
+Berlekamp--Massey: no nonzero polynomial of degree below `degree` satisfies
+all `shifts` tested recurrence positions. -/
+def HasMomentLinearComplexity (moment : ℕ → K) (shifts degree : ℕ) : Prop :=
+  ∀ p : K[X],
+    (∀ k < shifts,
+      ∑ i ∈ Finset.range (p.natDegree + 1), p.coeff i * moment (k + i) = 0) →
+    p ≠ 0 → degree ≤ p.natDegree
+
+/-- Evaluating a polynomial at the Krylov operator is exactly the usual
+linear recurrence on the scalar moments.  In particular, polynomial
+coefficient `i` multiplies moment `k + i`; certificate formats that store
+coefficients in descending order must reverse their array when constructing
+the polynomial. -/
+theorem scalarKrylovMoment_aeval_eq_sum
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (k : ℕ) (p : K[X]) :
+    u ((A ^ k) ((aeval A p) w)) =
+      ∑ i ∈ Finset.range (p.natDegree + 1),
+        p.coeff i * scalarKrylovMoment u A w (k + i) := by
+  rw [aeval_eq_sum_range]
+  simp [scalarKrylovMoment, pow_add, Module.End.mul_apply]
+
+theorem annihilatesMomentPrefix_iff_moment_recurrence
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (shifts : ℕ) (p : K[X]) :
+    AnnihilatesMomentPrefix u A w shifts p ↔
+      ∀ k < shifts,
+        ∑ i ∈ Finset.range (p.natDegree + 1),
+          p.coeff i * scalarKrylovMoment u A w (k + i) = 0 := by
+  constructor <;> intro h k hk
+  · rw [← scalarKrylovMoment_aeval_eq_sum]
+    exact h k hk
+  · rw [scalarKrylovMoment_aeval_eq_sum]
+    exact h k hk
+
+/-- Once certificate moments have been identified with actual Krylov moments,
+the sequence-only BM postcondition is exactly `HasScalarKrylovDegree`. -/
+theorem hasMomentLinearComplexity_krylov_iff
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (shifts degree : ℕ) :
+    HasMomentLinearComplexity (scalarKrylovMoment u A w) shifts degree ↔
+      HasScalarKrylovDegree u A w shifts degree := by
+  constructor
+  · intro complexity p recurrence p_ne_zero
+    apply complexity p _ p_ne_zero
+    exact (annihilatesMomentPrefix_iff_moment_recurrence
+      u A w shifts p).mp recurrence
+  · intro krylovDegree p recurrence p_ne_zero
+    apply krylovDegree p _ p_ne_zero
+    exact (annihilatesMomentPrefix_iff_moment_recurrence
+      u A w shifts p).mpr recurrence
+
+/-- Convert the certificate's descending coefficient array
+`[1, c₁, ..., c_degree]` into the polynomial
+`X^degree + c₁ X^(degree-1) + ... + c_degree`.
+
+The function is deliberately defined using ascending polynomial powers: array
+entry `j` becomes polynomial coefficient `degree - j`. -/
+def descendingConnectionPolynomial (degree : ℕ) (coefficient : ℕ → K) : K[X] :=
+  ofFn (degree + 1) fun i => coefficient (degree - i)
+
+theorem descendingConnectionPolynomial_coeff
+    (degree : ℕ) (coefficient : ℕ → K) {i : ℕ} (i_le : i ≤ degree) :
+    (descendingConnectionPolynomial degree coefficient).coeff i =
+      coefficient (degree - i) := by
+  simp [descendingConnectionPolynomial, Nat.lt_succ_of_le i_le]
+
+theorem descendingConnectionPolynomial_isMonicOfDegree
+    (degree : ℕ) (coefficient : ℕ → K) (leading : coefficient 0 = 1) :
+    IsMonicOfDegree (descendingConnectionPolynomial degree coefficient) degree := by
+  rw [isMonicOfDegree_iff]
+  constructor
+  · exact Nat.lt_succ_iff.mp
+      (ofFn_natDegree_lt (Nat.succ_le_succ (Nat.zero_le degree)) _)
+  · rw [descendingConnectionPolynomial_coeff degree coefficient (le_refl degree)]
+    simpa using leading
+
+theorem descendingConnectionPolynomial_constantCoeff
+    (degree : ℕ) (coefficient : ℕ → K) :
+    (descendingConnectionPolynomial degree coefficient).coeff 0 = coefficient degree := by
+  simpa using descendingConnectionPolynomial_coeff degree coefficient (Nat.zero_le degree)
+
+/-- The exact finite recurrence represented by the descending coefficient
+array.  The index `i` on the right is the polynomial power, so it reads the
+certificate array at `degree - i`. -/
+theorem descendingConnectionPolynomial_annihilates_iff
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (shifts degree : ℕ)
+    (coefficient : ℕ → K) (leading : coefficient 0 = 1) :
+    AnnihilatesMomentPrefix u A w shifts
+        (descendingConnectionPolynomial degree coefficient) ↔
+      ∀ k < shifts,
+        ∑ i ∈ Finset.range (degree + 1),
+          coefficient (degree - i) * scalarKrylovMoment u A w (k + i) = 0 := by
+  rw [annihilatesMomentPrefix_iff_moment_recurrence]
+  have monic := descendingConnectionPolynomial_isMonicOfDegree
+    degree coefficient leading
+  simp_rw [monic.natDegree_eq]
+  apply forall_congr'
+  intro k
+  apply forall_congr'
+  intro _
+  have sums_equal :
+      (∑ i ∈ Finset.range (degree + 1),
+          (descendingConnectionPolynomial degree coefficient).coeff i *
+            scalarKrylovMoment u A w (k + i)) =
+        ∑ i ∈ Finset.range (degree + 1),
+          coefficient (degree - i) * scalarKrylovMoment u A w (k + i) := by
+    apply Finset.sum_congr rfl
+    intro i i_mem
+    rw [descendingConnectionPolynomial_coeff degree coefficient]
+    exact Nat.le_of_lt_succ (Finset.mem_range.mp i_mem)
+  rw [sums_equal]
 
 theorem annihilatesMomentPrefix_sub
     {u : V →ₗ[K] K} {A : Module.End K V} {w : V} {shifts : ℕ} {p q : K[X]}
@@ -136,6 +255,29 @@ theorem injective_of_fullDegree_scalarKrylov_recurrence
       degree_ne_zero dimension fullDegree p p_monic p_recurrence
   apply injective_of_minpoly_coeff_zero_ne_zero A
   rwa [← p_eq]
+
+/-- Array-oriented form of the certificate bridge.  It consumes the same
+descending coefficient convention as `KMW2CERT`: entry zero is the monic
+leading coefficient and entry `degree` is the nonzero constant coefficient. -/
+theorem injective_of_fullDegree_descendingConnection
+    [FiniteDimensional K V]
+    (u : V →ₗ[K] K) (A : Module.End K V) (w : V) (shifts degree : ℕ)
+    (degree_ne_zero : degree ≠ 0)
+    (dimension : finrank K V = degree)
+    (fullDegree : HasScalarKrylovDegree u A w shifts degree)
+    (coefficient : ℕ → K) (leading : coefficient 0 = 1)
+    (recurrence : ∀ k < shifts,
+      ∑ i ∈ Finset.range (degree + 1),
+        coefficient (degree - i) * scalarKrylovMoment u A w (k + i) = 0)
+    (constant_ne_zero : coefficient degree ≠ 0) :
+    Function.Injective A := by
+  let p := descendingConnectionPolynomial degree coefficient
+  apply injective_of_fullDegree_scalarKrylov_recurrence
+    u A w shifts degree degree_ne_zero dimension fullDegree p
+  · exact descendingConnectionPolynomial_isMonicOfDegree degree coefficient leading
+  · exact (descendingConnectionPolynomial_annihilates_iff
+      u A w shifts degree coefficient leading).mpr recurrence
+  · simpa [p, descendingConnectionPolynomial_constantCoeff]
 
 end
 

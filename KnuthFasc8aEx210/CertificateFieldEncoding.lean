@@ -40,6 +40,31 @@ theorem ExtElt.isCanonical_mul (x y : ExtElt) : (x.mul y).IsCanonical := by
   constructor <;> simp [ExtElt.mul, toNat_u8Mod101,
     Nat.mod_lt]
 
+theorem ExtElt.isCanonical_scale (c : ℕ) (x : ExtElt) : (x.scale c).IsCanonical := by
+  constructor <;> simp [ExtElt.scale, toNat_u8Mod101, Nat.mod_lt]
+
+theorem isCanonical_u8SubMod101 {x y : UInt8}
+    (x_lt : x.toNat < 101) (y_lt : y.toNat < 101) :
+    (u8SubMod101 x y).toNat < 101 := by
+  unfold u8SubMod101
+  split <;> rw [UInt8.toNat_ofNat']
+  · rw [Nat.mod_eq_of_lt (by omega)]
+    omega
+  · rw [Nat.mod_eq_of_lt (by omega)]
+    omega
+
+theorem zmod101_of_u8SubMod101 {x y : UInt8}
+    (x_lt : x.toNat < 101) (y_lt : y.toNat < 101) :
+    ((u8SubMod101 x y).toNat : ZMod 101) = x.toNat - y.toNat := by
+  unfold u8SubMod101
+  split <;> rw [UInt8.toNat_ofNat']
+  · rw [Nat.mod_eq_of_lt (by omega)]
+    rw [Nat.cast_sub (by omega)]
+  · rw [Nat.mod_eq_of_lt (by omega)]
+    rw [Nat.cast_sub (by omega), Nat.cast_add]
+    rw [ZMod.natCast_self]
+    simp
+
 private theorem zmod101_natCast_eq_zero_iff_of_lt {n : ℕ} (n_lt : n < 101) :
     (n : ZMod 101) = 0 ↔ n = 0 := by
   constructor
@@ -91,5 +116,17 @@ theorem ExtElt.toCertificateField_mul (x y : ExtElt) :
   · simpa only [Nat.cast_add, Nat.cast_mul] using
       zmod101_of_u8Mod101
         (x.a.toNat * y.b.toNat + x.b.toNat * y.a.toNat)
+
+@[simp]
+theorem ExtElt.toCertificateField_scale (c : ℕ) (x : ExtElt) :
+    (x.scale c).toCertificateField =
+      algebraMap (ZMod 101) CertificateField c * x.toCertificateField := by
+  rw [ExtElt.toCertificateField, ExtElt.scale, ExtElt.toCertificateField,
+    ← certificatePair_scale]
+  congr 1
+  · simpa only [Nat.cast_mul] using
+      zmod101_of_u8Mod101 (c * x.a.toNat)
+  · simpa only [Nat.cast_mul] using
+      zmod101_of_u8Mod101 (c * x.b.toNat)
 
 end KnuthFasc8aEx210

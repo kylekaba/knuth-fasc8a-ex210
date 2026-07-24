@@ -250,6 +250,10 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   if c0.a != 1 || c0.b != 0 then
     throw <| IO.userError
       s!"connection polynomial for {e.cert} does not start with 1: {c0.a.toNat}+{c0.b.toNat}t"
+  let cN := cert.connectionConstantCoefficient
+  if cN.isZero then
+    throw <| IO.userError
+      s!"connection polynomial for {e.cert} has zero constant coefficient"
   let initialRecurrenceBad := cert.initialRecurrenceBad
   if initialRecurrenceBad != 0 then
     throw <| IO.userError
@@ -259,7 +263,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     throw <| IO.userError
       s!"extra recurrence check failed for {e.cert}: {recurrenceBad} bad moments"
   if cert.n != e.order || cert.degree != e.degree ||
-      cert.constantA != e.constantA || cert.constantB != e.constantB ||
+      cN.a != e.constantA || cN.b != e.constantB ||
       cert.border != e.border then
     throw <| IO.userError
       s!"unexpected certificate metadata for {e.cert}: n={cert.n}, degree={cert.degree}, constant={cert.constantA.toNat}+{cert.constantB.toNat}t, border={cert.border}"
@@ -318,7 +322,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cert.constantA.toNat}+{cert.constantB.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then

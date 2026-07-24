@@ -919,6 +919,13 @@ def RankCertificateFile.connectionLeadingCoefficient (cert : RankCertificateFile
     ExtElt :=
   pairAt cert.coefficients 0
 
+/-- The BM array is stored in descending recurrence order, so entry `degree`
+is the polynomial's constant coefficient.  This is the coefficient whose
+nonvanishing certifies nonsingularity. -/
+def RankCertificateFile.connectionConstantCoefficient (cert : RankCertificateFile) :
+    ExtElt :=
+  pairAt cert.coefficients cert.degree
+
 def fnv64Bytes (bytes : ByteArray) : UInt64 :=
   let offsetBasis : UInt64 := 1469598103934665603
   let prime : UInt64 := 1099511628211

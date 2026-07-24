@@ -176,7 +176,14 @@ There are two deliberately separate layers:
    multiplicity one. Its byte replay now has a canonical orbit and zero-counter
    injectivity bridge parallel to the normal certificates. Proof-shaped
    diagonal and eigenvector-residual counters remove the preconditioners and
-   yield root multiplicity one for the raw `Trel_plus` CSR matrix.
+   yield root multiplicity one for the raw `Trel_plus` CSR matrix. Scalar
+   extension is then removed: the bordered result gives multiplicity one and
+   the five normal results give multiplicity zero for the native `F_101` CSR
+   operators themselves. Lean assembles those conclusions into multiplicity
+   two for the full reflected block product, proves that non-50 singleton SCCs
+   contribute zero, and formalizes the adjugate construction of a scalar
+   transfer rational function. Its constant-term-one normalized denominator
+   is proved to divide `det(I-XM)`, yielding the modular cubic obstruction.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -184,9 +191,10 @@ The executable reports a runtime success value; it does not construct a
 kernel-checked inhabitant of `WidthFiveCertificate`. Consequently, this project
 provides a Lean-implemented certificate verifier and a kernel-checked logical
 and algebraic core, but not a single end-to-end kernel theorem derived from the
-binary files. The transfer decomposition, its denominator interpretation, and
-the conversion of runtime matrix checks into polynomial multiplicity proof
-terms remain on the external side of the boundary.
+binary files. The concrete reflection/SCC decomposition and `Wrel ~= Trel`
+identification, the closed visible-factor replay, and the conversion of runtime
+file checks into proof terms remain on the external side of the boundary. The
+generic transfer-denominator interpretation itself is now kernel checked.
 
 The certificate-to-nonsingularity bridge is:
 

@@ -155,11 +155,16 @@ Lean's kernel checks the polynomial argument over `Q[z]`, Gauss's lemma over
 `Z[z]`, reduction modulo 101, factor multiplicity, and the bordered-matrix
 kernel/range lemma. Separately, the `IO` executable replays the binary
 certificates and reports success or failure; it does not turn that runtime
-result into a `WidthFiveCertificate` proof term. The transfer construction and
-its connection to the normalized denominator polynomials also remain outside
-the kernel theorem. Thus this is a Lean-implemented certificate verifier plus a
-substantial kernel-checked algebraic core, not a single end-to-end kernel proof
-from the checked-in bytes.
+result into a `WidthFiveCertificate` proof term. Lean now also descends the
+checked block multiplicities to the raw `F_101` CSR operators, assembles the
+full reflected block product (including both copies of `Trel`), proves that
+non-50 singleton blocks add no visible factor, and formalizes the adjugate
+argument that a normalized scalar transfer denominator divides
+`det(I-XM)`. What remains outside the kernel theorem is the concrete
+reflection/SCC decomposition, the closed visible-factor replay as a proof
+term, and conversion of the checked-in binary results into inhabitants of
+those hypotheses. Thus the repository is not yet a single end-to-end kernel
+proof from the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

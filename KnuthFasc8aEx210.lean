@@ -9,4 +9,5 @@ import KnuthFasc8aEx210.CertificatePadeSoundness
 import KnuthFasc8aEx210.CertificateMatrixSoundness
 import KnuthFasc8aEx210.TransferMultiplicity
 import KnuthFasc8aEx210.TransferDenominator
+import KnuthFasc8aEx210.VisibleCertificateSoundness
 import KnuthFasc8aEx210.SHA256

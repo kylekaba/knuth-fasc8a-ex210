@@ -190,7 +190,11 @@ There are two deliberately separate layers:
    recurrence forces `1-50X` to divide the denominator. It also proves that
    recurrences propagate across the startup vector's full Krylov span, that
    the certificate formula `r=g(M²)beta` lies in that span, and that
-   `M²r=76r` implies `r+99Mr` is a `50`-eigenvector.
+   `M²r=76r` implies `r+99Mr` is a `50`-eigenvector. The parsed CSR matrix,
+   finish vector, and polynomial now feed a proof-shaped
+   `visibleCertificateBad` counter; zero gives the closed visible-factor
+   conclusion directly, while its native implementation runs the existing
+   efficient Horner and CSR evaluator.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -204,8 +208,8 @@ file checks into proof terms remain on the external side of the boundary. The
 generic transfer-denominator interpretation and the recurrence-to-visible-factor
 argument are now kernel checked. Connecting the reduced denominator to that
 recurrence and proving the byte-level closed residual and observable-coordinate
-checks denote the corresponding mathematical statements remain to be wired to
-the certificate replay.
+checks for the checked-in byte constants remain to be closed. The mathematical
+bad-count-to-factor bridge itself is now complete.
 
 The certificate-to-nonsingularity bridge is:
 

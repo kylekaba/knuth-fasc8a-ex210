@@ -160,32 +160,6 @@ def parseCheckOptions (args : List String) : Except String CheckOptions :=
     | option :: _ => throw s!"unknown option: {option}"
   go {} args
 
-def checkKrylovMomentsWithProgress (label : String)
-    (cert : RankCertificateFile) (matrixBytes : ByteArray)
-    (header : MatrixHeader) (eig? : Option EigenvectorFile)
-    (count : Nat) : IO Nat := do
-  let expectedOrder := header.n + if eig?.isSome then 1 else 0
-  if cert.n != expectedOrder then
-    throw <| IO.userError "certificate order does not match operator dimension"
-  let seedData := rankSeedByteData cert.n cert.seed
-  let mut x := seedData.x
-  let mut bad := 0
-  let limit := Nat.min count cert.terms
-  let progressStride := 5000
-  let showProgress := progressStride <= limit
-  for k in [0:limit] do
-    let actual := extDotBytes seedData.u x cert.n
-    let expected := pairAt cert.moments k
-    if actual != expected then
-      bad := bad + 1
-    if k + 1 < limit then
-      x ← exceptToIO s!"Krylov step {label}"
-        (krylovStepBytes matrixBytes header eig? seedData.dR seedData.dL x cert.n)
-    let done := k + 1
-    if showProgress && (done % progressStride == 0 || done == limit) then
-      IO.eprintln s!"krylov {label}: checked {done}/{limit} moments, bad={bad}"
-  pure bad
-
 def checkVisibleFiles (root : FilePath) (visiblePrefixSteps : Nat) : IO Unit := do
   let tallBytes ← readBin (root / "data/blocks/Tall_plus.kmc")
   verifySha256 (root / "data/blocks/Tall_plus.kmc")
@@ -325,8 +299,12 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
         throw <| IO.userError s!"eigenvector metadata mismatch for {e.cert}: {eig.summary}"
       if cert.eigenHash != fnv64Bytes eigBytes then
         throw <| IO.userError s!"eigenvector hash mismatch for {e.cert}"
-      let residualBad ← exceptToIO s!"eigenvector residual {eigPath}"
-        (eigenResidualBadRows matrixBytes matrix eig)
+      let eigenCanonicalBad := encodedVectorCanonicalBad
+        (eigenPairBytes eig eig.n) eig.n
+      if eigenCanonicalBad != 0 then
+        throw <| IO.userError
+          s!"eigenvector canonicality check failed for {e.cert}: {eigenCanonicalBad} bad entries"
+      let residualBad := eigenResidualMismatchCount matrixBytes matrix eig
       if residualBad != 0 then
         throw <| IO.userError
           s!"eigenvector residual check failed for {e.cert}: {residualBad} bad rows"
@@ -337,6 +315,14 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   if seedSizeBad != 0 then
     throw <| IO.userError
       s!"seed byte-vector size check failed for {e.cert}: {seedSizeBad} bad vectors"
+  let seedDRCanonicalBad := encodedVectorCanonicalBad seedByteData.dR cert.n
+  if seedDRCanonicalBad != 0 then
+    throw <| IO.userError
+      s!"right seed diagonal canonicality check failed for {e.cert}: {seedDRCanonicalBad} bad entries"
+  let seedDRZeroBad := encodedVectorZeroBad seedByteData.dR cert.n
+  if seedDRZeroBad != 0 then
+    throw <| IO.userError
+      s!"right seed diagonal nonzero check failed for {e.cert}: {seedDRZeroBad} zero entries"
   let expectedOrder := matrix.n + if eigForKrylov?.isSome then 1 else 0
   if cert.n != expectedOrder then
     throw <| IO.userError "certificate order does not match operator dimension"
@@ -346,8 +332,9 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
           seedByteData.dR seedByteData.dL seedByteData.u seedByteData.x
           krylovRequested
     | some eig =>
-        checkKrylovMomentsWithProgress (toString e.cert) cert matrixBytes matrix
-          (some eig) krylovPrefixMoments
+        pure <| cert.borderKrylovMismatchCount matrixBytes matrix eig
+          seedByteData.dR seedByteData.dL seedByteData.u seedByteData.x
+          krylovRequested
   if krylovPrefixBad != 0 then
     throw <| IO.userError
       s!"Krylov moment check failed for {e.cert}: {krylovPrefixBad} bad moments"
@@ -373,7 +360,7 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, csr_column_bad={csrColumnBad}, csr_row_pointer_bad={csrRowPointerBad}, seed_size_bad={seedSizeBad}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, csr_column_bad={csrColumnBad}, csr_row_pointer_bad={csrRowPointerBad}, seed_size_bad={seedSizeBad}, seed_dR_canonical_bad={seedDRCanonicalBad}, seed_dR_zero_bad={seedDRZeroBad}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
   if args.contains "--help" || args.contains "-h" then

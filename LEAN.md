@@ -65,10 +65,10 @@ this repository checkout and checks:
   `.kwc2` moments; by default this checks the first two moments, including one
   sparse shifted/bordered operator application, and `all` checks every stored
   `2N + 32` moment;
-* for normal certificates, the reported Krylov mismatch count is the same
-  proof-shaped canonical-orbit function used by the kernel theorem; zero
-  mismatches derive the replay orbit and every individual stored-moment
-  equality rather than assuming them;
+* for both normal and bordered certificates, the reported Krylov mismatch
+  count is the same proof-shaped canonical-orbit function used by the kernel
+  theorem; zero mismatches derive the replay orbit and every individual stored
+  moment equality rather than assuming them;
 * a configurable prefix of the visible-polynomial Horner loop
   `v <- A^2 v + coeff * beta` from the actual `Tall_plus.kmc`,
   `Tall_finish.vec`, and `visible76.poly` files; by default this checks the
@@ -85,6 +85,9 @@ this repository checkout and checks:
 * proof-shaped CSR column and row-interval counters, plus a seed-vector size
   counter; zero values supply the quantified bounds and byte dimensions used by
   the normal sparse-operator theorem;
+* canonicality and nonzero counters for the right diagonal preconditioner;
+  these prove it is surjective, allowing injectivity of `D_L B D_R` to imply
+  injectivity of the raw bordered operator `B`;
 * the matrix state-label tail has exactly one 64-bit label per row;
 * the `Trel_plus_eigen50.vec` residual against the actual `Trel_plus.kmc`
   sparse matrix, checking `(Trel_plus - 50I)v = 0` over `F_101`;
@@ -128,16 +131,15 @@ The full certificate-file verification is:
 .lake/build/bin/knuth_cert_check --full
 ```
 
-That command is intentionally expensive. The bordered Krylov replay prints
-progress every 5000 recomputed moments; normal certificates use the directly
-evaluated proof-shaped counter.
+That command is intentionally expensive. Both normal and bordered rank
+certificates use directly evaluated proof-shaped mismatch counters.
 
 Expected output includes:
 
 ```text
 PASS Lean parse visible files: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, visible_prefix_steps=2, visible_prefix_bare=0, eig_n=16831, pivot=0, pivot_value=37, sha256=ok
 PASS Lean full visible factor: Tall_plus_n=18325, Tall_plus_entries=565237, Trel_plus_n=16831, Trel_plus_entries=522193, finish_n=18325, degree(g)=4106, r_bare=67, v_bare=67, eigen76_bad=0, eigen50_bad=0, restricted_mismatch=0, pivot=0, pivot_value=37, sha256=ok
-PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, full_recurrence_bad=0, pade_bezout_bad=0, eigen_residual_bad=0, csr_column_bad=0, csr_row_pointer_bad=0, seed_size_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
+PASS Lean rank cert content: ./data/certs/Trel_plus_border.kwc2, n=16832, constant=23+34t, krylov_bad=0/33696 (full), bm_replay_degree=16832, bm_coefficient_bad=0, initial_recurrence_bad=0, extra_recurrence_bad=0, full_recurrence_bad=0, pade_bezout_bad=0, eigen_residual_bad=0, csr_column_bad=0, csr_row_pointer_bad=0, seed_size_bad=0, seed_dR_canonical_bad=0, seed_dR_zero_bad=0, seed_diag_rejections=4, matrix_n=16831, entries=522193, sha256=ok
 ...
 Lean certificate-file checks completed.
 ```
@@ -171,7 +173,10 @@ There are two deliberately separate layers:
    injectivity. The parsed bordered CSR map is also represented as the exact
    `[M - 50I, v; pivot, 0]` endomorphism, proved linearly equivalent to the
    abstract border operator, and connected directly to characteristic-root
-   multiplicity one.
+   multiplicity one. Its byte replay now has a canonical orbit and zero-counter
+   injectivity bridge parallel to the normal certificates. Proof-shaped
+   diagonal and eigenvector-residual counters remove the preconditioners and
+   yield root multiplicity one for the raw `Trel_plus` CSR matrix.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -189,6 +194,7 @@ The certificate-to-nonsingularity bridge is:
 KnuthFasc8aEx210.PadeWitnessFile.injective_of_checked_pade
 KnuthFasc8aEx210.PadeWitnessFile.injective_normal_of_checked_full_recurrence
 KnuthFasc8aEx210.PadeWitnessFile.injective_normal_of_checked_seed_counters
+KnuthFasc8aEx210.PadeWitnessFile.injective_border_of_checked_seed_counters
 ```
 
 The strongest normal-certificate theorem consumes zero executable counters,
@@ -208,4 +214,5 @@ KnuthFasc8aEx210.ker_eq_span_of_bordered_injective
 KnuthFasc8aEx210.not_mem_range_of_bordered_injective
 KnuthFasc8aEx210.charpoly_rootMultiplicity_eq_one_of_bordered_injective
 KnuthFasc8aEx210.csr_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
+KnuthFasc8aEx210.csr_charpoly_rootMultiplicity_fifty_eq_one_of_checked_counters
 ```

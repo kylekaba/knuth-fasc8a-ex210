@@ -170,6 +170,51 @@ def encodedDiagonalLinearMap (diagonal : ByteArray) (n : ℕ) :
     simp only [Pi.smul_apply, RingHom.id_apply]
     ring
 
+theorem pairAt_isCanonical_of_encodedVectorCanonicalBad_eq_zero
+    (bytes : ByteArray) (count : ℕ)
+    (canonical_bad : encodedVectorCanonicalBad bytes count = 0)
+    (i : Fin count) : (pairAt bytes i).IsCanonical := by
+  by_contra not_canonical
+  have invalid : 101 ≤ (pairAt bytes i).a.toNat ∨
+      101 ≤ (pairAt bytes i).b.toNat := by
+    simp only [ExtElt.IsCanonical, not_and_or, not_lt] at not_canonical
+    exact not_canonical
+  have bad_mem : i.val ∈ (List.range count).filter (fun j =>
+      let x := pairAt bytes j
+      decide (101 ≤ x.a.toNat ∨ 101 ≤ x.b.toNat)) := by
+    simp [i.isLt, invalid]
+  have bad_pos : 0 < encodedVectorCanonicalBad bytes count := by
+    rw [encodedVectorCanonicalBad]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
+theorem encodedVector_ne_zero_of_bad_counts_eq_zero
+    (bytes : ByteArray) (count : ℕ)
+    (canonical_bad : encodedVectorCanonicalBad bytes count = 0)
+    (zero_bad : encodedVectorZeroBad bytes count = 0) :
+    ∀ i : Fin count, encodedVector bytes count i ≠ 0 := by
+  intro i field_zero
+  have canonical := pairAt_isCanonical_of_encodedVectorCanonicalBad_eq_zero
+    bytes count canonical_bad i
+  have zero_test : (pairAt bytes i).isZero = true :=
+    (ExtElt.toCertificateField_eq_zero_iff _ canonical).1 field_zero
+  have bad_mem : i.val ∈ (List.range count).filter (fun j =>
+      (pairAt bytes j).isZero) := by
+    simp [i.isLt, zero_test]
+  have bad_pos : 0 < encodedVectorZeroBad bytes count := by
+    rw [encodedVectorZeroBad]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
+theorem encodedDiagonalLinearMap_surjective
+    (diagonal : ByteArray) (n : ℕ)
+    (nonzero : ∀ i : Fin n, encodedVector diagonal n i ≠ 0) :
+    Function.Surjective (encodedDiagonalLinearMap diagonal n) := by
+  intro y
+  refine ⟨fun i => (encodedVector diagonal n i)⁻¹ * y i, ?_⟩
+  funext i
+  simp [encodedDiagonalLinearMap, nonzero i]
+
 /-- Normal-certificate operator `D_L (M - 50 I) D_R`. -/
 def preconditionedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
     (dR dL : ByteArray) :
@@ -241,6 +286,54 @@ def borderedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
               x (Fin.last header.n) * encodedEigenVector eig header.n row)
       rw [shifted_smul]
       ring
+
+/-- Diagonally preconditioned bordered operator used by the bordered rank
+certificate. -/
+def preconditionedBorderedCSRLinearMap
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) (dR dL : ByteArray) :
+    Module.End CertificateField (Fin (header.n + 1) → CertificateField) :=
+  (encodedDiagonalLinearMap dL (header.n + 1)).comp
+    ((borderedCSRLinearMap matrixBytes header eig pivot).comp
+      (encodedDiagonalLinearMap dR (header.n + 1)))
+
+/-- Injectivity of `D_L B D_R` and surjectivity of `D_R` imply injectivity of
+the unpreconditioned middle operator `B`. -/
+theorem borderedCSRLinearMap_injective_of_preconditioned_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) (dR dL : ByteArray)
+    (right_surjective : Function.Surjective
+      (encodedDiagonalLinearMap dR (header.n + 1)))
+    (preconditioned_injective : Function.Injective
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL)) :
+    Function.Injective (borderedCSRLinearMap matrixBytes header eig pivot) := by
+  intro x y middle_equal
+  obtain ⟨x', rfl⟩ := right_surjective x
+  obtain ⟨y', rfl⟩ := right_surjective y
+  apply congrArg (encodedDiagonalLinearMap dR (header.n + 1))
+  apply preconditioned_injective
+  change encodedDiagonalLinearMap dL (header.n + 1)
+      (borderedCSRLinearMap matrixBytes header eig pivot
+        (encodedDiagonalLinearMap dR (header.n + 1) x')) =
+    encodedDiagonalLinearMap dL (header.n + 1)
+      (borderedCSRLinearMap matrixBytes header eig pivot
+        (encodedDiagonalLinearMap dR (header.n + 1) y'))
+  rw [middle_equal]
+
+theorem borderedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) (dR dL : ByteArray)
+    (dR_canonical_bad : encodedVectorCanonicalBad dR (header.n + 1) = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR (header.n + 1) = 0)
+    (preconditioned_injective : Function.Injective
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL)) :
+    Function.Injective (borderedCSRLinearMap matrixBytes header eig pivot) := by
+  apply borderedCSRLinearMap_injective_of_preconditioned_injective
+    matrixBytes header eig pivot dR dL
+  · apply encodedDiagonalLinearMap_surjective
+    exact encodedVector_ne_zero_of_bad_counts_eq_zero dR (header.n + 1)
+      dR_canonical_bad dR_zero_bad
+  · exact preconditioned_injective
 
 /-- Split an `(n+1)`-coordinate vector into its first `n` coordinates and its
 last scalar coordinate. -/
@@ -439,14 +532,14 @@ theorem matrixApplyShiftedNormalRow_toCertificateField
   simp [shiftedCSRLinearMap, encodedVector]
   rfl
 
-@[simp]
-theorem pointwiseProductBytes_size (a b : ByteArray) (n : ℕ) :
-    (pointwiseProductBytes a b n).size = 2 * n := by
-  induction n with
-  | zero => simp [pointwiseProductBytes]
-  | succ n ih =>
-      simp [pointwiseProductBytes, pushExtByteArray, ih]
-      omega
+theorem matrixApplyShiftedNormalRow_isCanonical
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : ℕ) :
+    (matrixApplyShiftedNormalRow matrixBytes header x row).IsCanonical := by
+  apply ExtElt.isCanonical_sub
+  · simp only [matrixRowBytes, ExtElt.IsCanonical]
+    constructor <;> rw [toNat_u8Mod101] <;> exact Nat.mod_lt _ (by omega)
+  · exact ExtElt.isCanonical_scale 50 _
 
 private theorem pairAt_pushExtByteArray_lt (bytes : ByteArray) (p : ExtElt)
     {i : ℕ} (second_lt : 2 * i + 1 < bytes.size) :
@@ -474,6 +567,151 @@ private theorem pairAt_pushExtByteArray_last (bytes : ByteArray) (p : ExtElt)
   · change ((bytes.push p.a).push p.b)[2 * n + 1]! = p.b
     rw [show 2 * n + 1 = (bytes.push p.a).size by simp [size_eq],
       ByteArray.getElem!_push_eq]
+
+@[simp]
+theorem eigenPairBytes_size (eig : EigenvectorFile) (n : ℕ) :
+    (eigenPairBytes eig n).size = 2 * n := by
+  induction n with
+  | zero => simp [eigenPairBytes]
+  | succ n ih => simp [eigenPairBytes, pushExtByteArray, ih]; omega
+
+theorem pairAt_eigenPairBytes (eig : EigenvectorFile) {n i : ℕ}
+    (i_lt : i < n) :
+    pairAt (eigenPairBytes eig n) i = { a := eig.values[i]!, b := 0 } := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      rw [eigenPairBytes]
+      by_cases i_lt_n : i < n
+      · have second_lt : 2 * i + 1 < (eigenPairBytes eig n).size := by
+          rw [eigenPairBytes_size]
+          omega
+        rw [pairAt_pushExtByteArray_lt _ _ second_lt]
+        exact ih i_lt_n
+      · have i_eq : i = n := by omega
+        subst i
+        exact pairAt_pushExtByteArray_last _ _ n (eigenPairBytes_size eig n)
+
+theorem encodedVector_eigenPairBytes
+    (eig : EigenvectorFile) (n : ℕ) :
+    encodedVector (eigenPairBytes eig n) n = encodedEigenVector eig n := by
+  funext i
+  rw [encodedVector, pairAt_eigenPairBytes eig i.isLt]
+  simp [ExtElt.toCertificateField, encodedEigenVector, eigenValueAt,
+    certificatePair]
+
+theorem encodedEigenVector_ne_zero_of_canonical_count
+    (eig : EigenvectorFile) (n : ℕ) (pivot : Fin n)
+    (canonical_bad : encodedVectorCanonicalBad (eigenPairBytes eig n) n = 0)
+    (value_ne_zero : eigenValueAt eig pivot ≠ 0) :
+    encodedEigenVector eig n pivot ≠ 0 := by
+  rw [← encodedVector_eigenPairBytes eig n]
+  intro field_zero
+  have canonical := pairAt_isCanonical_of_encodedVectorCanonicalBad_eq_zero
+    (eigenPairBytes eig n) n canonical_bad pivot
+  have zero_test := (ExtElt.toCertificateField_eq_zero_iff _ canonical).1 field_zero
+  rw [pairAt_eigenPairBytes eig pivot.isLt] at zero_test
+  simp only [ExtElt.isZero, Bool.and_eq_true, beq_iff_eq] at zero_test
+  apply value_ne_zero
+  simp [eigenValueAt, zero_test.1]
+
+theorem eigenResidualRow_isZero_of_mismatchCount_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader) (eig : EigenvectorFile)
+    (no_bad : eigenResidualMismatchCount matrixBytes header eig = 0)
+    (row : Fin header.n) :
+    (matrixApplyShiftedNormalRow matrixBytes header
+      (eigenPairBytes eig header.n) row).isZero = true := by
+  by_contra mismatch
+  have zero_test_false :
+      (matrixApplyShiftedNormalRow matrixBytes header
+        (eigenPairBytes eig header.n) row).isZero = false :=
+    Bool.eq_false_of_not_eq_true mismatch
+  have bad_mem : row.val ∈ (List.range header.n).filter (fun i =>
+      (matrixApplyShiftedNormalRow matrixBytes header
+        (eigenPairBytes eig header.n) i).isZero != true) := by
+    simp [row.isLt, zero_test_false]
+  have bad_pos : 0 < eigenResidualMismatchCount matrixBytes header eig := by
+    rw [eigenResidualMismatchCount]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
+/-- A zero proof-shaped residual count proves that the parsed vector is a
+genuine `50`-eigenvector of the CSR matrix. -/
+theorem shiftedCSRLinearMap_encodedEigenVector_eq_zero_of_residualCount_eq_zero
+    (matrixBytes : ByteArray) (header : MatrixHeader) (eig : EigenvectorFile)
+    (residual_bad : eigenResidualMismatchCount matrixBytes header eig = 0)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    shiftedCSRLinearMap matrixBytes header (encodedEigenVector eig header.n) = 0 := by
+  funext row
+  rw [← encodedVector_eigenPairBytes eig header.n,
+    ← matrixApplyShiftedNormalRow_toCertificateField matrixBytes header
+      (eigenPairBytes eig header.n) row (columns_valid row)]
+  apply (ExtElt.toCertificateField_eq_zero_iff _
+    (matrixApplyShiftedNormalRow_isCanonical matrixBytes header
+      (eigenPairBytes eig header.n) row)).2
+  exact eigenResidualRow_isZero_of_mismatchCount_eq_zero
+    matrixBytes header eig residual_bad row
+
+theorem matrixApplyShiftedBorderRow_toCertificateField
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) (row : Fin header.n)
+    (columns_valid : ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    (matrixApplyShiftedBorderRow matrixBytes header eig x row).toCertificateField =
+      shiftedCSRLinearMap matrixBytes header
+          (fun col => encodedVector x (header.n + 1) col.castSucc) row +
+        encodedVector x (header.n + 1) (Fin.last header.n) *
+          encodedEigenVector eig header.n row := by
+  have row_canonical :
+      (matrixRowBytes matrixBytes header x row).IsCanonical := by
+    simp only [matrixRowBytes, ExtElt.IsCanonical]
+    constructor <;> rw [toNat_u8Mod101] <;> exact Nat.mod_lt _ (by omega)
+  have border_canonical :
+      ((pairAt x header.n).scale (eigenValueAt eig row)).IsCanonical :=
+    ExtElt.isCanonical_scale _ _
+  have sum_canonical :
+      ((matrixRowBytes matrixBytes header x row).add
+        ((pairAt x header.n).scale (eigenValueAt eig row))).IsCanonical :=
+    ExtElt.isCanonical_add _ _
+  have shift_canonical : ((pairAt x row).scale 50).IsCanonical :=
+    ExtElt.isCanonical_scale 50 _
+  have restrict_eq : encodedVector x header.n =
+      (fun col => encodedVector x (header.n + 1) col.castSucc) := by
+    rfl
+  calc
+    (matrixApplyShiftedBorderRow matrixBytes header eig x row).toCertificateField =
+        (matrixApplyShiftedNormalRow matrixBytes header x row).toCertificateField +
+          ((pairAt x header.n).scale
+            (eigenValueAt eig row)).toCertificateField := by
+      rw [matrixApplyShiftedBorderRow, matrixApplyShiftedNormalRow,
+        ExtElt.toCertificateField_sub sum_canonical shift_canonical,
+        ExtElt.toCertificateField_add,
+        ExtElt.toCertificateField_sub row_canonical shift_canonical]
+      ring
+    _ = shiftedCSRLinearMap matrixBytes header
+          (encodedVector x header.n) row +
+        algebraMap (ZMod 101) CertificateField (eigenValueAt eig row) *
+          (pairAt x header.n).toCertificateField := by
+      rw [matrixApplyShiftedNormalRow_toCertificateField matrixBytes header x row
+        columns_valid, ExtElt.toCertificateField_scale]
+    _ = _ := by
+      rw [restrict_eq]
+      simp [encodedVector, encodedEigenVector]
+      ring
+
+@[simp]
+theorem pointwiseProductBytes_size (a b : ByteArray) (n : ℕ) :
+    (pointwiseProductBytes a b n).size = 2 * n := by
+  induction n with
+  | zero => simp [pointwiseProductBytes]
+  | succ n ih =>
+      simp [pointwiseProductBytes, pushExtByteArray, ih]
+      omega
 
 theorem pairAt_pointwiseProductBytes (a b : ByteArray) {n i : ℕ}
     (i_lt : i < n) :
@@ -569,6 +807,96 @@ theorem matrixApplyShiftedNormalBytes_encodedVector
     matrixApplyShiftedNormalRow_toCertificateField matrixBytes header x row
       (columns_valid row)]
 
+@[simp]
+theorem matrixApplyShiftedBorderBytesData_size
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) (n : ℕ) :
+    (matrixApplyShiftedBorderBytesData matrixBytes header eig x n).size = 2 * n := by
+  induction n with
+  | zero => simp [matrixApplyShiftedBorderBytesData]
+  | succ n ih =>
+      simp [matrixApplyShiftedBorderBytesData, pushExtByteArray, ih]
+      omega
+
+theorem pairAt_matrixApplyShiftedBorderBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray)
+    {n row : ℕ} (row_lt : row < n) :
+    pairAt (matrixApplyShiftedBorderBytesData matrixBytes header eig x n) row =
+      matrixApplyShiftedBorderRow matrixBytes header eig x row := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      rw [matrixApplyShiftedBorderBytesData]
+      by_cases row_lt_n : row < n
+      · have second_lt : 2 * row + 1 <
+          (matrixApplyShiftedBorderBytesData matrixBytes header eig x n).size := by
+          rw [matrixApplyShiftedBorderBytesData_size]
+          omega
+        rw [pairAt_pushExtByteArray_lt _ _ second_lt]
+        exact ih row_lt_n
+      · have row_eq : row = n := by omega
+        subst row
+        exact pairAt_pushExtByteArray_last _ _ n
+          (matrixApplyShiftedBorderBytesData_size matrixBytes header eig x n)
+
+theorem matrixApplyShiftedBorderBytes_pairAt_top
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {x out : ByteArray}
+    (result : matrixApplyShiftedBorderBytes matrixBytes header eig x = .ok out)
+    (row : Fin header.n) :
+    pairAt out row = matrixApplyShiftedBorderRow matrixBytes header eig x row := by
+  simp only [matrixApplyShiftedBorderBytes] at result
+  split at result <;> try contradiction
+  split at result <;> try contradiction
+  split at result <;> try contradiction
+  have out_eq := Except.ok.inj result
+  subst out
+  have second_lt : 2 * row.val + 1 <
+      (matrixApplyShiftedBorderBytesData matrixBytes header eig x header.n).size := by
+    rw [matrixApplyShiftedBorderBytesData_size]
+    omega
+  rw [pairAt_pushExtByteArray_lt _ _ second_lt]
+  exact pairAt_matrixApplyShiftedBorderBytesData matrixBytes header eig x row.isLt
+
+theorem matrixApplyShiftedBorderBytes_pairAt_last
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {x out : ByteArray}
+    (result : matrixApplyShiftedBorderBytes matrixBytes header eig x = .ok out) :
+    pairAt out header.n = pairAt x eig.pivot := by
+  simp only [matrixApplyShiftedBorderBytes] at result
+  split at result <;> try contradiction
+  split at result <;> try contradiction
+  split at result <;> try contradiction
+  have out_eq := Except.ok.inj result
+  subst out
+  exact pairAt_pushExtByteArray_last _ _ header.n
+    (matrixApplyShiftedBorderBytesData_size matrixBytes header eig x header.n)
+
+theorem matrixApplyShiftedBorderBytes_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {pivot : Fin header.n} {x out : ByteArray}
+    (result : matrixApplyShiftedBorderBytes matrixBytes header eig x = .ok out)
+    (pivot_eq : eig.pivot = pivot.val)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    encodedVector out (header.n + 1) =
+      borderedCSRLinearMap matrixBytes header eig pivot
+        (encodedVector x (header.n + 1)) := by
+  funext i
+  refine Fin.lastCases ?_ (fun row => ?_) i
+  · change (pairAt out header.n).toCertificateField = _
+    rw [matrixApplyShiftedBorderBytes_pairAt_last result,
+      pivot_eq]
+    simp [borderedCSRLinearMap, encodedVector]
+  · change (pairAt out row.val).toCertificateField = _
+    rw [matrixApplyShiftedBorderBytes_pairAt_top result row,
+      matrixApplyShiftedBorderRow_toCertificateField matrixBytes header eig x row
+        (columns_valid row)]
+    simp [borderedCSRLinearMap]
+
 /-- One complete normal certificate step computes
 `D_L (M - 50 I) D_R` on interpreted vectors. -/
 theorem krylovStepBytes_normal_encodedVector
@@ -603,6 +931,47 @@ theorem krylovStepBytes_normal_encodedVector
           have out_semantics := mulByteVectors_encodedVector result
           rw [out_semantics]
           change encodedDiagonalLinearMap dL header.n (encodedVector y header.n) = _
+          rw [y_semantics, dx_semantics]
+          rfl
+
+/-- One complete bordered certificate step computes the diagonally
+preconditioned `[M - 50I, v; pivot, 0]` operator. -/
+theorem krylovStepBytes_border_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {pivot : Fin header.n}
+    {dR dL x out : ByteArray}
+    (result : krylovStepBytes matrixBytes header (some eig) dR dL x
+      (header.n + 1) = .ok out)
+    (pivot_eq : eig.pivot = pivot.val)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    encodedVector out (header.n + 1) =
+      preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL
+        (encodedVector x (header.n + 1)) := by
+  simp only [krylovStepBytes] at result
+  generalize dx_result : mulByteVectors dR x (header.n + 1) = dxResult at result
+  cases dxResult with
+  | error message => contradiction
+  | ok dx =>
+      change (matrixApplyShiftedBorderBytes matrixBytes header eig dx >>= fun y =>
+        mulByteVectors dL y (header.n + 1)) = .ok out at result
+      generalize shifted_result :
+        matrixApplyShiftedBorderBytes matrixBytes header eig dx = shiftedResult at result
+      cases shiftedResult with
+      | error message =>
+          change (Except.error message : ParseM ByteArray) = .ok out at result
+          contradiction
+      | ok y =>
+          change mulByteVectors dL y (header.n + 1) = .ok out at result
+          have dx_semantics := mulByteVectors_encodedVector dx_result
+          have y_semantics := matrixApplyShiftedBorderBytes_encodedVector
+            shifted_result pivot_eq columns_valid
+          have out_semantics := mulByteVectors_encodedVector result
+          rw [out_semantics]
+          change encodedDiagonalLinearMap dL (header.n + 1)
+            (encodedVector y (header.n + 1)) = _
           rw [y_semantics, dx_semantics]
           rfl
 
@@ -693,6 +1062,91 @@ theorem RankCertificateFile.storedMoment_eq_normalKrylovOrbit_of_mismatchCount_e
     exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
   omega
 
+@[simp]
+theorem matrixApplyShiftedBorderBytesValue_size
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) :
+    (matrixApplyShiftedBorderBytesValue matrixBytes header eig x).size =
+      2 * (header.n + 1) := by
+  simp [matrixApplyShiftedBorderBytesValue, pushExtByteArray,
+    matrixApplyShiftedBorderBytesData_size]
+  omega
+
+theorem borderKrylovOrbitBytes_size
+    (matrixBytes : ByteArray) (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL initial : ByteArray)
+    (initial_size : initial.size = 2 * (header.n + 1)) :
+    ∀ k, (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k).size =
+      2 * (header.n + 1) := by
+  intro k
+  cases k with
+  | zero => exact initial_size
+  | succ k => simp [borderKrylovOrbitBytes, pointwiseProductBytes_size]
+
+/-- The canonical total bordered orbit makes every partial byte step succeed
+under the checked dimension and pivot metadata. -/
+theorem krylovStepBytes_borderKrylovOrbit
+    (matrixBytes : ByteArray) (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL initial : ByteArray)
+    (eig_n : eig.n = header.n) (pivot_lt : eig.pivot < header.n)
+    (dR_size : dR.size = 2 * (header.n + 1))
+    (dL_size : dL.size = 2 * (header.n + 1))
+    (initial_size : initial.size = 2 * (header.n + 1)) :
+    ∀ k, krylovStepBytes matrixBytes header (some eig) dR dL
+      (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+      (header.n + 1) =
+        .ok (borderKrylovOrbitBytes matrixBytes header eig dR dL initial (k + 1)) := by
+  intro k
+  let orbit := borderKrylovOrbitBytes matrixBytes header eig dR dL initial k
+  let dx := pointwiseProductBytes dR orbit (header.n + 1)
+  let y := matrixApplyShiftedBorderBytesValue matrixBytes header eig dx
+  have orbit_size : orbit.size = 2 * (header.n + 1) :=
+    borderKrylovOrbitBytes_size matrixBytes header eig dR dL initial
+      initial_size k
+  have dx_result : mulByteVectors dR orbit (header.n + 1) = .ok dx := by
+    simp [mulByteVectors, dx, dR_size, orbit_size]
+  have y_result : matrixApplyShiftedBorderBytes matrixBytes header eig dx = .ok y := by
+    simp [matrixApplyShiftedBorderBytes, matrixApplyShiftedBorderBytesValue,
+      y, dx, pointwiseProductBytes_size, eig_n, pivot_lt]
+  have out_result : mulByteVectors dL y (header.n + 1) =
+      .ok (pointwiseProductBytes dL y (header.n + 1)) := by
+    simp [mulByteVectors, dL_size, y, matrixApplyShiftedBorderBytesValue_size]
+  change (mulByteVectors dR orbit (header.n + 1) >>= fun dx' =>
+    matrixApplyShiftedBorderBytes matrixBytes header eig dx' >>= fun y' =>
+      mulByteVectors dL y' (header.n + 1)) = _
+  rw [dx_result]
+  change (matrixApplyShiftedBorderBytes matrixBytes header eig dx >>= fun y' =>
+    mulByteVectors dL y' (header.n + 1)) = _
+  rw [y_result]
+  change mulByteVectors dL y (header.n + 1) =
+    .ok (pointwiseProductBytes dL y (header.n + 1))
+  exact out_result
+
+theorem RankCertificateFile.storedMoment_eq_borderKrylovOrbit_of_mismatchCount_eq_zero
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL probe initial : ByteArray) (count : ℕ)
+    (no_bad : cert.borderKrylovMismatchCount matrixBytes header eig dR dL probe
+      initial count = 0) :
+    ∀ k < count, pairAt cert.moments k =
+      extDotBytes probe
+        (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+        (header.n + 1) := by
+  intro k k_lt
+  by_contra mismatch
+  have k_mem : k ∈ List.range count := by simpa using k_lt
+  have bad_mem : k ∈ (List.range count).filter (fun i =>
+      pairAt cert.moments i !=
+        extDotBytes probe
+          (borderKrylovOrbitBytes matrixBytes header eig dR dL initial i)
+          (header.n + 1)) := by
+    simp [k_mem, mismatch]
+  have bad_pos : 0 < cert.borderKrylovMismatchCount matrixBytes header eig dR dL
+      probe initial count := by
+    rw [RankCertificateFile.borderKrylovMismatchCount]
+    exact List.length_pos_of_ne_nil (List.ne_nil_of_mem bad_mem)
+  omega
+
 /-- Repeated successful byte steps represent powers of the normal
 preconditioned operator. -/
 theorem normalKrylovOrbit_encodedVector
@@ -756,6 +1210,51 @@ theorem RankCertificateFile.fieldMoment_eq_normalKrylovMoment_of_orbit
         (encodedVector initial header.n) k := by
   rw [RankCertificateFile.fieldMoment, stored_match]
   exact normalKrylovMoment_of_orbit orbit orbit_zero step columns_valid k
+
+/-- Repeated successful bordered byte steps represent powers of the
+preconditioned bordered CSR operator. -/
+theorem borderKrylovOrbit_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {pivot : Fin header.n}
+    {dR dL initial : ByteArray} (orbit : ℕ → ByteArray)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header (some eig) dR dL (orbit k)
+      (header.n + 1) = .ok (orbit (k + 1)))
+    (pivot_eq : eig.pivot = pivot.val)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    ∀ k, encodedVector (orbit k) (header.n + 1) =
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL ^ k)
+        (encodedVector initial (header.n + 1)) := by
+  intro k
+  induction k with
+  | zero => simp [orbit_zero]
+  | succ k ih =>
+      rw [krylovStepBytes_border_encodedVector (step k) pivot_eq columns_valid, ih]
+      simp [pow_succ', Module.End.mul_apply]
+
+theorem borderKrylovMoment_of_orbit
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {eig : EigenvectorFile} {pivot : Fin header.n}
+    {dR dL probe initial : ByteArray} (orbit : ℕ → ByteArray)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header (some eig) dR dL (orbit k)
+      (header.n + 1) = .ok (orbit (k + 1)))
+    (pivot_eq : eig.pivot = pivot.val)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n)
+    (k : ℕ) :
+    (extDotBytes probe (orbit k) (header.n + 1)).toCertificateField =
+      scalarKrylovMoment (encodedProbeLinearMap probe (header.n + 1))
+        (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL)
+        (encodedVector initial (header.n + 1)) k := by
+  rw [extDotBytes_eq_encodedProbe,
+    borderKrylovOrbit_encodedVector orbit orbit_zero step pivot_eq columns_valid k]
+  rfl
 
 /-- All mathematical pieces of a normal rank certificate, assembled from an
 explicit replay orbit and stored recurrence. -/
@@ -942,6 +1441,110 @@ theorem PadeWitnessFile.injective_normal_of_checked_seed_counters
     bm_terms bm_terms_le u_length_le v_length_le no_bad full_recurrence_bad
     krylov_bad csr_column_bad csr_row_pointer_bad leading constant_ne_zero
     sizes.1 sizes.2.1 sizes.2.2.2
+
+/-- Fully counter-shaped bordered-certificate bridge.  A successful checked
+certificate proves injectivity of the diagonally preconditioned bordered CSR
+operator without exposing replay-orbit or per-moment premises. -/
+theorem PadeWitnessFile.injective_border_of_checked_seed_counters
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (seedData : KrylovSeedByteData)
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n + 1)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (bm_terms_le : cert.bmTerms ≤ cert.terms)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (full_recurrence_bad : cert.fullRecurrenceBad = 0)
+    (krylov_bad : cert.borderKrylovMismatchCount matrixBytes header eig
+      seedData.dR seedData.dL seedData.u seedData.x (2 * cert.degree) = 0)
+    (csr_column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (csr_row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (seed_size_bad : seedData.sizeBad (header.n + 1) = 0)
+    (eig_n : eig.n = header.n)
+    (pivot_eq : eig.pivot = pivot.val)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0) :
+    Function.Injective
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot
+        seedData.dR seedData.dL) := by
+  let orbit := borderKrylovOrbitBytes matrixBytes header eig
+    seedData.dR seedData.dL seedData.x
+  let u := encodedProbeLinearMap seedData.u (header.n + 1)
+  let A := preconditionedBorderedCSRLinearMap matrixBytes header eig pivot
+    seedData.dR seedData.dL
+  let w := encodedVector seedData.x (header.n + 1)
+  have sizes := seedData.sizes_of_sizeBad_eq_zero (header.n + 1) seed_size_bad
+  have pivot_lt : eig.pivot < header.n := by rw [pivot_eq]; exact pivot.isLt
+  have columns_valid := matrixColumnsValid_of_bad_counts_eq_zero
+    matrixBytes header csr_column_bad csr_row_pointer_bad
+  have step : ∀ k, krylovStepBytes matrixBytes header (some eig)
+      seedData.dR seedData.dL (orbit k) (header.n + 1) = .ok (orbit (k + 1)) :=
+    krylovStepBytes_borderKrylovOrbit matrixBytes header eig seedData.dR
+      seedData.dL seedData.x eig_n pivot_lt sizes.1 sizes.2.1 sizes.2.2.2
+  have stored_match : ∀ k < 2 * cert.degree, pairAt cert.moments k =
+      extDotBytes seedData.u (orbit k) (header.n + 1) :=
+    cert.storedMoment_eq_borderKrylovOrbit_of_mismatchCount_eq_zero
+      matrixBytes header eig seedData.dR seedData.dL seedData.u seedData.x
+      (2 * cert.degree) krylov_bad
+  have moment_match : ∀ k < 2 * cert.degree,
+      cert.fieldMoment k = scalarKrylovMoment u A w k := by
+    intro k k_lt
+    rw [RankCertificateFile.fieldMoment, stored_match k k_lt]
+    exact borderKrylovMoment_of_orbit orbit rfl step pivot_eq columns_valid k
+  have stored_recurrence :=
+    cert.stored_recurrence_of_fullRecurrenceBad_eq_zero bm_terms bm_terms_le
+      full_recurrence_bad
+  have recurrence : ∀ k < cert.degree,
+      ∑ i ∈ Finset.range (cert.degree + 1),
+        cert.fieldCoefficient (cert.degree - i) *
+          scalarKrylovMoment u A w (k + i) = 0 := by
+    intro k k_lt
+    rw [← stored_recurrence k k_lt]
+    apply Finset.sum_congr rfl
+    intro i i_mem
+    have i_lt : i < cert.degree + 1 := Finset.mem_range.mp i_mem
+    rw [moment_match (k + i) (by omega)]
+  have dimension : Module.finrank CertificateField
+      (Fin (header.n + 1) → CertificateField) = cert.degree := by
+    simp [degree_eq]
+  exact witness.injective_of_checked_pade cert u A w degree_gt_one dimension
+    bm_terms u_length_le v_length_le no_bad moment_match leading recurrence
+    constant_ne_zero
+
+/-- The final bordered matrix bridge: checked preconditioned injectivity,
+diagonal validity, CSR validity, and the eigenvector residual imply algebraic
+multiplicity one for `50` in the unbordered CSR characteristic polynomial. -/
+theorem csr_charpoly_rootMultiplicity_fifty_eq_one_of_checked_counters
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) (dR dL : ByteArray)
+    (preconditioned_injective : Function.Injective
+      (preconditionedBorderedCSRLinearMap matrixBytes header eig pivot dR dL))
+    (dR_canonical_bad : encodedVectorCanonicalBad dR (header.n + 1) = 0)
+    (dR_zero_bad : encodedVectorZeroBad dR (header.n + 1) = 0)
+    (csr_column_bad : matrixCSRColumnBad matrixBytes header = 0)
+    (csr_row_pointer_bad : matrixCSRRowPointerBad matrixBytes header = 0)
+    (eigen_residual_bad : eigenResidualMismatchCount matrixBytes header eig = 0)
+    (eigen_canonical_bad :
+      encodedVectorCanonicalBad (eigenPairBytes eig header.n) header.n = 0)
+    (pivot_value_ne_zero : eigenValueAt eig pivot ≠ 0) :
+    (csrLinearMap matrixBytes header).charpoly.rootMultiplicity
+      (50 : CertificateField) = 1 := by
+  have columns_valid := matrixColumnsValid_of_bad_counts_eq_zero
+    matrixBytes header csr_column_bad csr_row_pointer_bad
+  have border_injective :=
+    borderedCSRLinearMap_injective_of_preconditioned_and_diagonal_counters
+      matrixBytes header eig pivot dR dL dR_canonical_bad dR_zero_bad
+      preconditioned_injective
+  have eigen_residual :=
+    shiftedCSRLinearMap_encodedEigenVector_eq_zero_of_residualCount_eq_zero
+      matrixBytes header eig eigen_residual_bad columns_valid
+  have pivot_ne_zero := encodedEigenVector_ne_zero_of_canonical_count
+    eig header.n pivot eigen_canonical_bad pivot_value_ne_zero
+  exact csr_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
+    matrixBytes header eig pivot eigen_residual pivot_ne_zero border_injective
 
 end
 

@@ -916,6 +916,35 @@ def KrylovSeedByteData.sizeBad (data : KrylovSeedByteData) (order : Nat) : Nat :
   (if data.u.size = 2 * order then 0 else 1) +
   (if data.x.size = 2 * order then 0 else 1)
 
+private unsafe def encodedVectorCanonicalBadFast
+    (bytes : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for i in [0:count] do
+      let x := pairAt bytes i
+      if 101 ≤ x.a.toNat || 101 ≤ x.b.toNat then bad := bad + 1
+    pure bad
+
+/-- Number of encoded field coordinates not reduced to canonical bytes. -/
+@[implemented_by encodedVectorCanonicalBadFast]
+def encodedVectorCanonicalBad (bytes : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun i =>
+    let x := pairAt bytes i
+    decide (101 ≤ x.a.toNat ∨ 101 ≤ x.b.toNat)).length
+
+private unsafe def encodedVectorZeroBadFast
+    (bytes : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for i in [0:count] do
+      if (pairAt bytes i).isZero then bad := bad + 1
+    pure bad
+
+/-- Number of encoded coordinates equal to zero. -/
+@[implemented_by encodedVectorZeroBadFast]
+def encodedVectorZeroBad (bytes : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun i => (pairAt bytes i).isZero).length
+
 def rankSeedExpansionSummary (order : Nat) (seed : UInt64) :
     SeedExpansionSummary :=
   let data := rankSeedData order seed
@@ -1000,6 +1029,39 @@ def matrixRowBytes (matrixBytes : ByteArray) (header : MatrixHeader)
 def matrixApplyShiftedNormalRow (matrixBytes : ByteArray) (header : MatrixHeader)
     (x : ByteArray) (row : Nat) : ExtElt :=
   (matrixRowBytes matrixBytes header x row).sub ((pairAt x row).scale 50)
+
+/-- Specification of a top row of the bordered operator
+`[M - 50I, v; pivot, 0]`. -/
+def matrixApplyShiftedBorderRow (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) (row : Nat) : ExtElt :=
+  ((matrixRowBytes matrixBytes header x row).add
+    ((pairAt x header.n).scale (eigenValueAt eig row))).sub
+      ((pairAt x row).scale 50)
+
+/-- Encode a prime-field eigenvector as extension-field byte pairs. -/
+def eigenPairBytes (eig : EigenvectorFile) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | n + 1 => pushExtByteArray (eigenPairBytes eig n)
+      { a := eig.values[n]!, b := 0 }
+
+private unsafe def eigenResidualMismatchCountFast
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) : Nat :=
+  Id.run do
+    let x := eigenPairBytes eig header.n
+    let mut bad := 0
+    for row in [0:header.n] do
+      if !(matrixApplyShiftedNormalRow matrixBytes header x row).isZero then
+        bad := bad + 1
+    pure bad
+
+/-- Proof-shaped count of nonzero rows of `(M - 50I)v`. -/
+@[implemented_by eigenResidualMismatchCountFast]
+def eigenResidualMismatchCount (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) : Nat :=
+  let x := eigenPairBytes eig header.n
+  ((List.range header.n).filter fun row =>
+    (matrixApplyShiftedNormalRow matrixBytes header x row).isZero != true).length
 
 def matrixApplyShifted (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : Array ExtElt) : ParseM (Array ExtElt) := do
@@ -1117,6 +1179,15 @@ def matrixApplyShiftedNormalBytesData
         (matrixApplyShiftedNormalBytesData matrixBytes header x row)
         (matrixApplyShiftedNormalRow matrixBytes header x row)
 
+def matrixApplyShiftedBorderBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | row + 1 =>
+      pushExtByteArray
+        (matrixApplyShiftedBorderBytesData matrixBytes header eig x row)
+        (matrixApplyShiftedBorderRow matrixBytes header eig x row)
+
 private def matrixApplyShiftedNormalBytesFast
     (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
     ParseM ByteArray :=
@@ -1131,13 +1202,33 @@ def matrixApplyShiftedNormalBytes
     .ok (matrixApplyShiftedNormalBytesData matrixBytes header x header.n)
   else .error "byte operator vector has wrong dimension"
 
+private def matrixApplyShiftedBorderBytesFast
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ParseM ByteArray :=
+  matrixApplyShiftedBytes matrixBytes header (some eig) x
+
+/-- Specification-shaped bordered sparse shifted application. -/
+@[implemented_by matrixApplyShiftedBorderBytesFast]
+def matrixApplyShiftedBorderBytes
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ParseM ByteArray :=
+  if x.size == 2 * (header.n + 1) then
+    if eig.n == header.n then
+      if eig.pivot < header.n then
+        .ok (pushExtByteArray
+          (matrixApplyShiftedBorderBytesData matrixBytes header eig x header.n)
+          (pairAt x eig.pivot))
+      else .error "border eigenvector pivot out of range"
+    else .error "border eigenvector dimension does not match matrix"
+  else .error "byte operator vector has wrong dimension"
+
 def krylovStepBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : ByteArray) (order : Nat) :
     ParseM ByteArray := do
   let dx ← mulByteVectors dR x order
   let y ← match eig? with
     | none => matrixApplyShiftedNormalBytes matrixBytes header dx
-    | some eig => matrixApplyShiftedBytes matrixBytes header (some eig) dx
+    | some eig => matrixApplyShiftedBorderBytes matrixBytes header eig dx
   mulByteVectors dL y order
 
 /-- Canonical total byte orbit for a normal certificate.  This exposes the
@@ -1184,6 +1275,56 @@ def RankCertificateFile.normalKrylovMismatchCount
       extDotBytes probe
         (normalKrylovOrbitBytes matrixBytes header dR dL initial k)
         header.n).length
+
+/-- Total value returned by a successful bordered sparse application. -/
+def matrixApplyShiftedBorderBytesValue
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ByteArray :=
+  pushExtByteArray
+    (matrixApplyShiftedBorderBytesData matrixBytes header eig x header.n)
+    (pairAt x eig.pivot)
+
+/-- Canonical total byte orbit for the bordered certificate. -/
+def borderKrylovOrbitBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (dR dL initial : ByteArray) : Nat → ByteArray
+  | 0 => initial
+  | k + 1 =>
+      pointwiseProductBytes dL
+        (matrixApplyShiftedBorderBytesValue matrixBytes header eig
+          (pointwiseProductBytes dR
+            (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+            (header.n + 1)))
+        (header.n + 1)
+
+private unsafe def RankCertificateFile.borderKrylovMismatchCountFast
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL probe initial : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let order := header.n + 1
+    let mut x := initial
+    let mut bad := 0
+    for k in [0:count] do
+      if pairAt cert.moments k != extDotBytes probe x order then
+        bad := bad + 1
+      if k + 1 < count then
+        let dx := pointwiseProductBytes dR x order
+        let y := matrixApplyShiftedBorderBytesValue matrixBytes header eig dx
+        x := pointwiseProductBytes dL y order
+    pure bad
+
+/-- Number of stored moments that disagree with the canonical bordered byte
+orbit over the requested prefix. -/
+@[implemented_by RankCertificateFile.borderKrylovMismatchCountFast]
+def RankCertificateFile.borderKrylovMismatchCount
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL probe initial : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun k =>
+    pairAt cert.moments k !=
+      extDotBytes probe
+        (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+        (header.n + 1)).length
 
 def krylovStep (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : Array ExtElt) :

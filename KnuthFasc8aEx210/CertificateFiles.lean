@@ -86,6 +86,15 @@ def p101 : Nat := 101
 def u8Mod101 (n : Nat) : UInt8 :=
   UInt8.ofNat (n % p101)
 
+/-- Every byte is a canonical representative of an element of `ZMod 101`. -/
+def byteArrayIsCanonicalMod101 (bytes : ByteArray) : Bool :=
+  Id.run do
+    let mut canonical := true
+    for b in bytes do
+      if 101 <= b.toNat then
+        canonical := false
+    pure canonical
+
 def readMagicPrefix (c : Cursor) (expected : String) : ParseM Cursor := do
   let (m, c) ← c.readBytes 8 "magic"
   require (ByteArray.hasAsciiPrefix m expected) s!"bad magic, expected prefix {expected}"
@@ -470,6 +479,10 @@ def parseRankCertificate (bytes : ByteArray) : ParseM RankCertificateFile := do
   let (coefficients, c1) ← c.readBytes coefficientBytes "stored BM coefficients"
   c := c1
   requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 moments)
+    "stored moment byte is not reduced modulo 101"
+  require (byteArrayIsCanonicalMod101 coefficients)
+    "stored connection-polynomial byte is not reduced modulo 101"
   let constantA := coefficients[coefficientBytes - 2]!
   let constantB := coefficients[coefficientBytes - 1]!
   require (constantA != 0 || constantB != 0) "zero constant coefficient"

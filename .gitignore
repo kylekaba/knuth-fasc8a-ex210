@@ -8,3 +8,5 @@ build/
 
 # Local editor/harness config
 .claude/
+
+cli.txt

@@ -65,14 +65,14 @@ out. -/
 def csrApplyField (matrixBytes : ByteArray) (header : MatrixHeader)
     (x : Fin header.n → CertificateField) (row : Fin header.n) :
     CertificateField :=
-  ∑ entry ∈ Finset.range header.entries,
-    if matrixRowStart matrixBytes header row ≤ entry ∧
-        entry < matrixRowStop matrixBytes header row then
-      if h : matrixColumnAt matrixBytes header entry < header.n then
-        algebraMap (ZMod 101) CertificateField
-            (matrixValueAt matrixBytes header entry) *
-          x ⟨matrixColumnAt matrixBytes header entry, h⟩
-      else 0
+  ∑ offset ∈ Finset.range
+      (matrixRowStop matrixBytes header row -
+        matrixRowStart matrixBytes header row),
+    let entry := matrixRowEntry matrixBytes header row offset
+    if h : matrixColumnAt matrixBytes header entry < header.n then
+      algebraMap (ZMod 101) CertificateField
+          (matrixValueAt matrixBytes header entry) *
+        x ⟨matrixColumnAt matrixBytes header entry, h⟩
     else 0
 
 /-- Mathematical linear operator represented by a parsed CSR matrix. -/
@@ -144,6 +144,90 @@ theorem extDotBytes_eq_encodedProbe
     (extDotBytes probe x n).toCertificateField =
       encodedProbeLinearMap probe n (encodedVector x n) := by
   exact extDotBytes_toCertificateField probe x n
+
+private theorem matrixRowByteSums_eq
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray)
+    (row count : ℕ) :
+    matrixRowByteSums matrixBytes header x row count =
+      (∑ offset ∈ Finset.range count, (
+          matrixRowByteRealTerm matrixBytes header x row offset),
+        ∑ offset ∈ Finset.range count, (
+          matrixRowByteImagTerm matrixBytes header x row offset)) := by
+  induction count with
+  | zero => simp [matrixRowByteSums]
+  | succ count ih =>
+      rw [matrixRowByteSums, ih]
+      simp only [Finset.sum_range_succ]
+
+private theorem matrixRowBytes_toCertificateField_sum
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray)
+    (row : ℕ) :
+    (matrixRowBytes matrixBytes header x row).toCertificateField =
+      ∑ offset ∈ Finset.range
+        (matrixRowStop matrixBytes header row -
+          matrixRowStart matrixBytes header row),
+        let entry := matrixRowEntry matrixBytes header row offset
+        algebraMap (ZMod 101) CertificateField
+            (matrixValueAt matrixBytes header entry) *
+          (pairAt x (matrixColumnAt matrixBytes header entry)).toCertificateField := by
+  rw [ExtElt.toCertificateField]
+  simp only [matrixRowBytes]
+  rw [matrixRowByteSums_eq, zmod101_of_u8Mod101, zmod101_of_u8Mod101]
+  simp only [Nat.cast_sum]
+  rw [certificatePair_finset_sum]
+  apply Finset.sum_congr rfl
+  intro offset offset_mem
+  simp only [matrixRowByteRealTerm, matrixRowByteImagTerm]
+  change (matrixRowByteTerm matrixBytes header x row offset).toCertificateField = _
+  rw [matrixRowByteTerm, ExtElt.toCertificateField_scale]
+
+theorem matrixRowBytes_toCertificateField
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray)
+    (row : Fin header.n)
+    (columns_valid : ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    (matrixRowBytes matrixBytes header x row).toCertificateField =
+      csrApplyField matrixBytes header (encodedVector x header.n) row := by
+  rw [matrixRowBytes_toCertificateField_sum]
+  simp only [csrApplyField]
+  apply Finset.sum_congr rfl
+  intro offset offset_mem
+  have offset_lt : offset <
+      matrixRowStop matrixBytes header row -
+        matrixRowStart matrixBytes header row := Finset.mem_range.mp offset_mem
+  have column_lt := columns_valid offset offset_lt
+  have column_lt' : matrixColumnAt matrixBytes header
+      (matrixRowEntry matrixBytes header row offset) < header.n := by
+    simpa [matrixRowEntry] using column_lt
+  rw [dif_pos column_lt', encodedVector]
+
+theorem matrixApplyShiftedNormalRow_toCertificateField
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray)
+    (row : Fin header.n)
+    (columns_valid : ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    (matrixApplyShiftedNormalRow matrixBytes header x row).toCertificateField =
+      shiftedCSRLinearMap matrixBytes header (encodedVector x header.n) row := by
+  have row_canonical :
+      (matrixRowBytes matrixBytes header x row).IsCanonical := by
+    simp only [matrixRowBytes, ExtElt.IsCanonical]
+    constructor
+    · rw [toNat_u8Mod101]
+      exact Nat.mod_lt _ (by omega)
+    · rw [toNat_u8Mod101]
+      exact Nat.mod_lt _ (by omega)
+  have shift_canonical : ((pairAt x row).scale 50).IsCanonical :=
+    ExtElt.isCanonical_scale 50 (pairAt x row)
+  rw [matrixApplyShiftedNormalRow,
+    ExtElt.toCertificateField_sub row_canonical shift_canonical,
+    matrixRowBytes_toCertificateField matrixBytes header x row columns_valid,
+    ExtElt.toCertificateField_scale]
+  simp [shiftedCSRLinearMap, encodedVector]
+  rfl
 
 end
 

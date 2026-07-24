@@ -920,6 +920,45 @@ def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
   let totals := extDotByteSums u x n
   { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
 
+/-- Natural-coordinate accumulator for one CSR row. -/
+def matrixRowEntry (matrixBytes : ByteArray) (header : MatrixHeader)
+    (row offset : Nat) : Nat :=
+  matrixRowStart matrixBytes header row + offset
+
+def matrixRowByteTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : ExtElt :=
+  let entry := matrixRowEntry matrixBytes header row offset
+  (pairAt x (matrixColumnAt matrixBytes header entry)).scale
+    (matrixValueAt matrixBytes header entry)
+
+def matrixRowByteRealTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : Nat :=
+  (matrixRowByteTerm matrixBytes header x row offset).a.toNat
+
+def matrixRowByteImagTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : Nat :=
+  (matrixRowByteTerm matrixBytes header x row offset).b.toNat
+
+def matrixRowByteSums (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : Nat → Nat × Nat
+  | 0 => (0, 0)
+  | offset + 1 =>
+      let totals := matrixRowByteSums matrixBytes header x row offset
+      (totals.1 + matrixRowByteRealTerm matrixBytes header x row offset,
+        totals.2 + matrixRowByteImagTerm matrixBytes header x row offset)
+
+def matrixRowBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : ExtElt :=
+  let count := matrixRowStop matrixBytes header row -
+    matrixRowStart matrixBytes header row
+  let totals := matrixRowByteSums matrixBytes header x row count
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
+
+/-- Specification of a normal (unbordered) row of `M - 50I`. -/
+def matrixApplyShiftedNormalRow (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : ExtElt :=
+  (matrixRowBytes matrixBytes header x row).sub ((pairAt x row).scale 50)
+
 def matrixApplyShifted (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : Array ExtElt) : ParseM (Array ExtElt) := do
   let n := header.n

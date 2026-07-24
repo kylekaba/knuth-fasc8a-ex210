@@ -138,6 +138,44 @@ theorem charpolyRev_reindex (e : m ≃ o) (M : Matrix m m K) :
 
 end Blocks
 
+section WidthFiveObstruction
+
+variable {closedIndex openIndex : Type*}
+  [Fintype closedIndex] [DecidableEq closedIndex]
+  [Fintype openIndex] [DecidableEq openIndex]
+
+/-- Matrix-level modular obstruction: a visible factor in the reduced closed
+scalar denominator and multiplicity two in the open transfer determinant rule
+out cubic divisibility of the normalized scalar denominators. -/
+theorem normalizedTransferDenominator_cube_not_dvd
+    (closedMatrix : Matrix closedIndex closedIndex F101)
+    (closedStart closedFinish : closedIndex → F101)
+    (openMatrix : Matrix openIndex openIndex F101)
+    (openStart openFinish : openIndex → F101)
+    (closed_visible : visibleFactor ∣
+      normalizedTransferDenominator closedMatrix closedStart closedFinish)
+    (open_multiplicity :
+      emultiplicity visibleFactor openMatrix.charpolyRev = 2) :
+    ¬(normalizedTransferDenominator closedMatrix closedStart closedFinish ^ 3 ∣
+      normalizedTransferDenominator openMatrix openStart openFinish) := by
+  intro denominator_cube_dvd
+  have visible_cube_dvd_open_denominator : visibleFactor ^ 3 ∣
+      normalizedTransferDenominator openMatrix openStart openFinish :=
+    (pow_dvd_pow_of_dvd closed_visible 3).trans denominator_cube_dvd
+  have visible_cube_dvd_open_transfer : visibleFactor ^ 3 ∣
+      openMatrix.charpolyRev :=
+    visible_cube_dvd_open_denominator.trans
+      (normalizedTransferDenominator_dvd_charpolyRev
+        openMatrix openStart openFinish)
+  have visible_cube_not_dvd_open_transfer :
+      ¬(visibleFactor ^ 3 ∣ openMatrix.charpolyRev) := by
+    apply not_pow_dvd_of_emultiplicity_lt
+    rw [open_multiplicity]
+    norm_num
+  exact visible_cube_not_dvd_open_transfer visible_cube_dvd_open_transfer
+
+end WidthFiveObstruction
+
 end
 
 end KnuthFasc8aEx210

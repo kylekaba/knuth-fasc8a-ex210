@@ -21,6 +21,8 @@ universal claim for all `m >= 5`.
 The bordered-matrix argument from `PROOF.md` is also formalized: if the
 bordered operator `[H v; phi 0]` is injective, `H v = 0`, and `phi v != 0`,
 then `ker(H) = span(v)` and `v` is not in the range of `H`.
+Lean additionally derives that the corresponding eigenvalue has root
+multiplicity exactly one in the characteristic polynomial.
 
 Type-check the Lean library (this does not run the certificate checker):
 
@@ -159,4 +161,5 @@ The bordered-matrix conclusions are:
 ```lean
 KnuthFasc8aEx210.ker_eq_span_of_bordered_injective
 KnuthFasc8aEx210.not_mem_range_of_bordered_injective
+KnuthFasc8aEx210.charpoly_rootMultiplicity_eq_one_of_bordered_injective
 ```

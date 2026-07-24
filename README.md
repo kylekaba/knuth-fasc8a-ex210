@@ -121,7 +121,8 @@ In brief, the Lean executable:
   through `Z[z]` and then reduces coefficients into `(ZMod 101)[z]`;
 - formalizes the bordered-matrix lemma used to establish algebraic simplicity:
   bordered injectivity implies `ker(H) = span(v)` and `v` is not in the range
-  of `H`.
+  of `H`; using Mathlib's generalized-eigenspace theorem, Lean then proves the
+  eigenvalue has characteristic-polynomial root multiplicity exactly one.
 
 Type-check the Lean proof and run the quick certificate smoke check:
 

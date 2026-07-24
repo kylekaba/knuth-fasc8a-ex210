@@ -148,7 +148,9 @@ There are two deliberately separate layers:
    count imply the complete polynomial Bézout identity, and composes that
    identity with the Hankel/Krylov nonsingularity theorem. The encoded byte
    dot product is proved equal to the ordinary `CertificateField` vector dot
-   product used by scalar Krylov moments.
+   product used by scalar Krylov moments. Parsed CSR data, the `-50I` shift,
+   and left/right diagonal preconditioning are represented as genuine linear
+   endomorphisms for the normal rank certificates.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 

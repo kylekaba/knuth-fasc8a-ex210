@@ -169,6 +169,58 @@ theorem ExtElt.toCertificateField_mul (x y : ExtElt) :
       zmod101_of_u8Mod101
         (x.a.toNat * y.b.toNat + x.b.toNat * y.a.toNat)
 
+/-- The executable convolution coefficient has the usual field-valued
+coefficient semantics. -/
+private theorem extConvolutionSums_eq
+    (left right : ℕ → ExtElt) (rightLength k n : ℕ) :
+    extConvolutionSums left right rightLength k n =
+      (∑ i ∈ Finset.range n,
+          if i ≤ k ∧ k - i < rightLength then
+            (left i).a.toNat * (right (k - i)).a.toNat +
+              2 * (left i).b.toNat * (right (k - i)).b.toNat
+          else 0,
+        ∑ i ∈ Finset.range n,
+          if i ≤ k ∧ k - i < rightLength then
+            (left i).a.toNat * (right (k - i)).b.toNat +
+              (left i).b.toNat * (right (k - i)).a.toNat
+          else 0) := by
+  induction n with
+  | zero => simp [extConvolutionSums]
+  | succ n ih =>
+      rw [extConvolutionSums, ih]
+      simp only [Finset.sum_range_succ]
+      split_ifs <;> simp_all [Nat.add_assoc]
+
+private theorem certificatePair_finset_sum {α : Type*} [DecidableEq α]
+    (s : Finset α) (real imag : α → ZMod 101) :
+    certificatePair (∑ i ∈ s, real i) (∑ i ∈ s, imag i) =
+      ∑ i ∈ s, certificatePair (real i) (imag i) := by
+  induction s using Finset.induction_on with
+  | empty => simp
+  | @insert i s i_not_mem ih =>
+      simp only [Finset.sum_insert i_not_mem]
+      rw [certificatePair_add, ih]
+
+theorem extConvolutionCoefficient_toCertificateField
+    (left : ℕ → ExtElt) (leftLength : ℕ)
+    (right : ℕ → ExtElt) (rightLength k : ℕ) :
+    (extConvolutionCoefficient left leftLength right rightLength k).toCertificateField =
+      ∑ i ∈ Finset.range leftLength,
+        if i ≤ k ∧ k - i < rightLength then
+          (left i).toCertificateField * (right (k - i)).toCertificateField
+        else 0 := by
+  rw [ExtElt.toCertificateField]
+  simp only [extConvolutionCoefficient, extConvolutionSums_eq]
+  rw [zmod101_of_u8Mod101, zmod101_of_u8Mod101]
+  push_cast
+  rw [certificatePair_finset_sum]
+  apply Finset.sum_congr rfl
+  intro i i_mem
+  split_ifs with valid
+  · rw [ExtElt.toCertificateField, ExtElt.toCertificateField,
+      certificatePair_mul]
+  · simp
+
 @[simp]
 theorem ExtElt.toCertificateField_scale (c : ℕ) (x : ExtElt) :
     (x.scale c).toCertificateField =

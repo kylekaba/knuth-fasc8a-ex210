@@ -599,7 +599,20 @@ def parsePadeWitness (bytes : ByteArray) : ParseM PadeWitnessFile := do
   }
 
 /-- One coefficient of a convolution in `F_101[t]/(t^2-2)`. -/
-def extConvolutionCoefficient
+def extConvolutionSums
+    (left : Nat → ExtElt) (right : Nat → ExtElt) (rightLength k : Nat) :
+    Nat → Nat × Nat
+  | 0 => (0, 0)
+  | i + 1 =>
+      let totals := extConvolutionSums left right rightLength k i
+      if i ≤ k ∧ k - i < rightLength then
+        (totals.1 + (left i).a.toNat * (right (k - i)).a.toNat +
+            2 * (left i).b.toNat * (right (k - i)).b.toNat,
+          totals.2 + (left i).a.toNat * (right (k - i)).b.toNat +
+            (left i).b.toNat * (right (k - i)).a.toNat)
+      else totals
+
+private unsafe def extConvolutionCoefficientFast
     (left : Nat → ExtElt) (leftLength : Nat)
     (right : Nat → ExtElt) (rightLength k : Nat) : ExtElt :=
   Id.run do
@@ -612,6 +625,16 @@ def extConvolutionCoefficient
         real := real + x.a.toNat * y.a.toNat + 2 * x.b.toNat * y.b.toNat
         imag := imag + x.a.toNat * y.b.toNat + x.b.toNat * y.a.toNat
     pure { a := u8Mod101 real, b := u8Mod101 imag }
+
+/-- One coefficient of a convolution.  The kernel-visible definition follows
+the finite-sum specification; compiled checkers use the equivalent one-pass
+accumulator above. -/
+@[implemented_by extConvolutionCoefficientFast]
+def extConvolutionCoefficient
+    (left : Nat → ExtElt) (leftLength : Nat)
+    (right : Nat → ExtElt) (rightLength k : Nat) : ExtElt :=
+  let totals := extConvolutionSums left right rightLength k leftLength
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
 
 def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtElt :=
   Id.run do

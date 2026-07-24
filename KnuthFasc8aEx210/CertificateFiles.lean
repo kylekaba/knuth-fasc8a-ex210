@@ -1005,13 +1005,29 @@ def mulArrays (a b : Array ExtElt) : Array ExtElt :=
       out := out.push (a[i]!.mul b[i]!)
     pure out
 
-def mulByteVectors (a b : ByteArray) (n : Nat) : ParseM ByteArray := do
+def pointwiseProductBytes (a b : ByteArray) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | n + 1 =>
+      pushExtByteArray (pointwiseProductBytes a b n)
+        ((pairAt a n).mul (pairAt b n))
+
+private unsafe def mulByteVectorsFast (a b : ByteArray) (n : Nat) : ParseM ByteArray := do
   require (a.size == 2 * n) "left byte vector has wrong dimension"
   require (b.size == 2 * n) "right byte vector has wrong dimension"
   let mut out := ByteArray.emptyWithCapacity (2 * n)
   for i in [0:n] do
     out := pushExtByteArray out ((pairAt a i).mul (pairAt b i))
   pure out
+
+/-- Pairwise extension-field multiplication.  Proofs see the recursive byte
+layout; compiled replay uses the allocation-efficient loop. -/
+@[implemented_by mulByteVectorsFast]
+def mulByteVectors (a b : ByteArray) (n : Nat) : ParseM ByteArray :=
+  if a.size == 2 * n then
+    if b.size == 2 * n then
+      .ok (pointwiseProductBytes a b n)
+    else .error "right byte vector has wrong dimension"
+  else .error "left byte vector has wrong dimension"
 
 def matrixApplyShiftedBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : ByteArray) : ParseM ByteArray := do
@@ -1050,11 +1066,36 @@ def matrixApplyShiftedBytes (matrixBytes : ByteArray) (header : MatrixHeader)
       let pivotPair := 2 * eig.pivot
       pure ((y.push x[pivotPair]!).push x[pivotPair + 1]!)
 
+def matrixApplyShiftedNormalBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    Nat → ByteArray
+  | 0 => ByteArray.empty
+  | row + 1 =>
+      pushExtByteArray
+        (matrixApplyShiftedNormalBytesData matrixBytes header x row)
+        (matrixApplyShiftedNormalRow matrixBytes header x row)
+
+private def matrixApplyShiftedNormalBytesFast
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    ParseM ByteArray :=
+  matrixApplyShiftedBytes matrixBytes header none x
+
+/-- Specification-shaped normal sparse shifted application. -/
+@[implemented_by matrixApplyShiftedNormalBytesFast]
+def matrixApplyShiftedNormalBytes
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    ParseM ByteArray :=
+  if x.size == 2 * header.n then
+    .ok (matrixApplyShiftedNormalBytesData matrixBytes header x header.n)
+  else .error "byte operator vector has wrong dimension"
+
 def krylovStepBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : ByteArray) (order : Nat) :
     ParseM ByteArray := do
   let dx ← mulByteVectors dR x order
-  let y ← matrixApplyShiftedBytes matrixBytes header eig? dx
+  let y ← match eig? with
+    | none => matrixApplyShiftedNormalBytes matrixBytes header dx
+    | some eig => matrixApplyShiftedBytes matrixBytes header (some eig) dx
   mulByteVectors dL y order
 
 def krylovStep (matrixBytes : ByteArray) (header : MatrixHeader)

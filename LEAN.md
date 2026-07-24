@@ -152,6 +152,9 @@ There are two deliberately separate layers:
    and left/right diagonal preconditioning are represented as genuine linear
    endomorphisms for the normal rank certificates, and each encoded normal
    CSR row is proved to evaluate to the corresponding shifted-operator row.
+   Successful bytewise diagonal multiplication and full Krylov steps preserve
+   this interpretation; a checked normal orbit plus stored recurrence now
+   composes directly with the Padé witness to prove operator injectivity.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 

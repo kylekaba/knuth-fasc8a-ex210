@@ -1,5 +1,6 @@
 import Mathlib.LinearAlgebra.FiniteDimensional.Basic
 import KnuthFasc8aEx210.CertificateFieldEncoding
+import KnuthFasc8aEx210.CertificatePadeSoundness
 
 /-!
 # Soundness of encoded matrix-certificate operations
@@ -228,6 +229,291 @@ theorem matrixApplyShiftedNormalRow_toCertificateField
     ExtElt.toCertificateField_scale]
   simp [shiftedCSRLinearMap, encodedVector]
   rfl
+
+@[simp]
+theorem pointwiseProductBytes_size (a b : ByteArray) (n : ℕ) :
+    (pointwiseProductBytes a b n).size = 2 * n := by
+  induction n with
+  | zero => simp [pointwiseProductBytes]
+  | succ n ih =>
+      simp [pointwiseProductBytes, pushExtByteArray, ih]
+      omega
+
+private theorem pairAt_pushExtByteArray_lt (bytes : ByteArray) (p : ExtElt)
+    {i : ℕ} (second_lt : 2 * i + 1 < bytes.size) :
+    pairAt (pushExtByteArray bytes p) i = pairAt bytes i := by
+  change ExtElt.mk _ _ = ExtElt.mk _ _
+  rw [ExtElt.mk.injEq]
+  constructor
+  · change ((bytes.push p.a).push p.b)[2 * i]! = bytes[2 * i]!
+    rw [ByteArray.getElem!_push_lt _ _ _ (by simp; omega),
+      ByteArray.getElem!_push_lt _ _ _ (by omega)]
+  · change ((bytes.push p.a).push p.b)[2 * i + 1]! = bytes[2 * i + 1]!
+    rw [ByteArray.getElem!_push_lt _ _ _ (by simp; omega),
+      ByteArray.getElem!_push_lt _ _ _ second_lt]
+
+private theorem pairAt_pushExtByteArray_last (bytes : ByteArray) (p : ExtElt)
+    (n : ℕ) (size_eq : bytes.size = 2 * n) :
+    pairAt (pushExtByteArray bytes p) n = p := by
+  change ExtElt.mk _ _ = ExtElt.mk _ _
+  rw [ExtElt.mk.injEq]
+  constructor
+  · change ((bytes.push p.a).push p.b)[2 * n]! = p.a
+    rw [ByteArray.getElem!_push_lt _ _ _ (by simp [size_eq]),
+      show 2 * n = bytes.size from size_eq.symm,
+      ByteArray.getElem!_push_eq]
+  · change ((bytes.push p.a).push p.b)[2 * n + 1]! = p.b
+    rw [show 2 * n + 1 = (bytes.push p.a).size by simp [size_eq],
+      ByteArray.getElem!_push_eq]
+
+theorem pairAt_pointwiseProductBytes (a b : ByteArray) {n i : ℕ}
+    (i_lt : i < n) :
+    pairAt (pointwiseProductBytes a b n) i =
+      (pairAt a i).mul (pairAt b i) := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      rw [pointwiseProductBytes]
+      by_cases i_lt_n : i < n
+      · have second_lt : 2 * i + 1 < (pointwiseProductBytes a b n).size := by
+          rw [pointwiseProductBytes_size]
+          omega
+        rw [pairAt_pushExtByteArray_lt _ _ second_lt]
+        exact ih i_lt_n
+      · have i_eq : i = n := by omega
+        subst i
+        exact pairAt_pushExtByteArray_last _ _ n
+          (pointwiseProductBytes_size a b n)
+
+theorem mulByteVectors_pairAt {a b out : ByteArray} {n i : ℕ}
+    (result : mulByteVectors a b n = .ok out) (i_lt : i < n) :
+    pairAt out i = (pairAt a i).mul (pairAt b i) := by
+  simp only [mulByteVectors] at result
+  split at result <;> try contradiction
+  split at result <;> try contradiction
+  have out_eq := Except.ok.inj result
+  subst out
+  exact pairAt_pointwiseProductBytes a b i_lt
+
+theorem mulByteVectors_encodedVector {a b out : ByteArray} {n : ℕ}
+    (result : mulByteVectors a b n = .ok out) :
+    encodedVector out n =
+      fun i => encodedVector a n i * encodedVector b n i := by
+  funext i
+  rw [encodedVector, encodedVector, encodedVector,
+    mulByteVectors_pairAt result i.isLt,
+    ExtElt.toCertificateField_mul]
+
+@[simp]
+theorem matrixApplyShiftedNormalBytesData_size
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) (n : ℕ) :
+    (matrixApplyShiftedNormalBytesData matrixBytes header x n).size = 2 * n := by
+  induction n with
+  | zero => simp [matrixApplyShiftedNormalBytesData]
+  | succ n ih =>
+      simp [matrixApplyShiftedNormalBytesData, pushExtByteArray, ih]
+      omega
+
+theorem pairAt_matrixApplyShiftedNormalBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray)
+    {n row : ℕ} (row_lt : row < n) :
+    pairAt (matrixApplyShiftedNormalBytesData matrixBytes header x n) row =
+      matrixApplyShiftedNormalRow matrixBytes header x row := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      rw [matrixApplyShiftedNormalBytesData]
+      by_cases row_lt_n : row < n
+      · have second_lt : 2 * row + 1 <
+          (matrixApplyShiftedNormalBytesData matrixBytes header x n).size := by
+          rw [matrixApplyShiftedNormalBytesData_size]
+          omega
+        rw [pairAt_pushExtByteArray_lt _ _ second_lt]
+        exact ih row_lt_n
+      · have row_eq : row = n := by omega
+        subst row
+        exact pairAt_pushExtByteArray_last _ _ n
+          (matrixApplyShiftedNormalBytesData_size matrixBytes header x n)
+
+theorem matrixApplyShiftedNormalBytes_pairAt
+    {matrixBytes : ByteArray} {header : MatrixHeader} {x out : ByteArray}
+    (result : matrixApplyShiftedNormalBytes matrixBytes header x = .ok out)
+    (row : Fin header.n) :
+    pairAt out row = matrixApplyShiftedNormalRow matrixBytes header x row := by
+  simp only [matrixApplyShiftedNormalBytes] at result
+  split at result <;> try contradiction
+  have out_eq := Except.ok.inj result
+  subst out
+  exact pairAt_matrixApplyShiftedNormalBytesData matrixBytes header x row.isLt
+
+theorem matrixApplyShiftedNormalBytes_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader} {x out : ByteArray}
+    (result : matrixApplyShiftedNormalBytes matrixBytes header x = .ok out)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    encodedVector out header.n =
+      shiftedCSRLinearMap matrixBytes header (encodedVector x header.n) := by
+  funext row
+  rw [encodedVector, matrixApplyShiftedNormalBytes_pairAt result row,
+    matrixApplyShiftedNormalRow_toCertificateField matrixBytes header x row
+      (columns_valid row)]
+
+/-- One complete normal certificate step computes
+`D_L (M - 50 I) D_R` on interpreted vectors. -/
+theorem krylovStepBytes_normal_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL x out : ByteArray}
+    (result : krylovStepBytes matrixBytes header none dR dL x header.n = .ok out)
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    encodedVector out header.n =
+      preconditionedCSRLinearMap matrixBytes header dR dL
+        (encodedVector x header.n) := by
+  simp only [krylovStepBytes] at result
+  generalize dx_result : mulByteVectors dR x header.n = dxResult at result
+  cases dxResult with
+  | error message => contradiction
+  | ok dx =>
+      change (matrixApplyShiftedNormalBytes matrixBytes header dx >>= fun y =>
+        mulByteVectors dL y header.n) = .ok out at result
+      generalize shifted_result :
+        matrixApplyShiftedNormalBytes matrixBytes header dx = shiftedResult at result
+      cases shiftedResult with
+      | error message =>
+          change (Except.error message : ParseM ByteArray) = .ok out at result
+          contradiction
+      | ok y =>
+          change mulByteVectors dL y header.n = .ok out at result
+          have dx_semantics := mulByteVectors_encodedVector dx_result
+          have y_semantics := matrixApplyShiftedNormalBytes_encodedVector
+            shifted_result columns_valid
+          have out_semantics := mulByteVectors_encodedVector result
+          rw [out_semantics]
+          change encodedDiagonalLinearMap dL header.n (encodedVector y header.n) = _
+          rw [y_semantics, dx_semantics]
+          rfl
+
+/-- Repeated successful byte steps represent powers of the normal
+preconditioned operator. -/
+theorem normalKrylovOrbit_encodedVector
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL initial : ByteArray} (orbit : ℕ → ByteArray)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header none dR dL (orbit k)
+      header.n = .ok (orbit (k + 1)))
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n) :
+    ∀ k, encodedVector (orbit k) header.n =
+      (preconditionedCSRLinearMap matrixBytes header dR dL ^ k)
+        (encodedVector initial header.n) := by
+  intro k
+  induction k with
+  | zero => simp [orbit_zero]
+  | succ k ih =>
+      rw [krylovStepBytes_normal_encodedVector (step k) columns_valid, ih]
+      simp [pow_succ', Module.End.mul_apply]
+
+/-- A checked encoded dot product along such an orbit is the corresponding
+scalar Krylov moment. -/
+theorem normalKrylovMoment_of_orbit
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray} (orbit : ℕ → ByteArray)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header none dR dL (orbit k)
+      header.n = .ok (orbit (k + 1)))
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n)
+    (k : ℕ) :
+    (extDotBytes probe (orbit k) header.n).toCertificateField =
+      scalarKrylovMoment (encodedProbeLinearMap probe header.n)
+        (preconditionedCSRLinearMap matrixBytes header dR dL)
+        (encodedVector initial header.n) k := by
+  rw [extDotBytes_eq_encodedProbe,
+    normalKrylovOrbit_encodedVector orbit orbit_zero step columns_valid k]
+  rfl
+
+theorem RankCertificateFile.fieldMoment_eq_normalKrylovMoment_of_orbit
+    (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray} (orbit : ℕ → ByteArray)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header none dR dL (orbit k)
+      header.n = .ok (orbit (k + 1)))
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n)
+    {k : ℕ}
+    (stored_match : pairAt cert.moments k =
+      extDotBytes probe (orbit k) header.n) :
+    cert.fieldMoment k =
+      scalarKrylovMoment (encodedProbeLinearMap probe header.n)
+        (preconditionedCSRLinearMap matrixBytes header dR dL)
+        (encodedVector initial header.n) k := by
+  rw [RankCertificateFile.fieldMoment, stored_match]
+  exact normalKrylovMoment_of_orbit orbit orbit_zero step columns_valid k
+
+/-- All mathematical pieces of a normal rank certificate, assembled.  The
+remaining executable bridge is to obtain `orbit`, `stored_match`, and the full
+stored recurrence from zero checker mismatch counts. -/
+theorem PadeWitnessFile.injective_normal_of_checked_orbit
+    (witness : PadeWitnessFile) (cert : RankCertificateFile)
+    {matrixBytes : ByteArray} {header : MatrixHeader}
+    {dR dL probe initial : ByteArray} (orbit : ℕ → ByteArray)
+    (degree_gt_one : 1 < cert.degree)
+    (degree_eq : cert.degree = header.n)
+    (bm_terms : cert.bmTerms = 2 * cert.degree)
+    (u_length_le : witness.uLength ≤ cert.degree)
+    (v_length_le : witness.vLength ≤ cert.degree)
+    (no_bad : witness.bezoutBad cert = 0)
+    (leading : cert.fieldCoefficient 0 = 1)
+    (constant_ne_zero : cert.fieldCoefficient cert.degree ≠ 0)
+    (orbit_zero : orbit 0 = initial)
+    (step : ∀ k, krylovStepBytes matrixBytes header none dR dL (orbit k)
+      header.n = .ok (orbit (k + 1)))
+    (columns_valid : ∀ row : Fin header.n, ∀ offset <
+      matrixRowStop matrixBytes header row - matrixRowStart matrixBytes header row,
+      matrixColumnAt matrixBytes header
+        (matrixRowStart matrixBytes header row + offset) < header.n)
+    (stored_match : ∀ k < 2 * cert.degree, pairAt cert.moments k =
+      extDotBytes probe (orbit k) header.n)
+    (stored_recurrence : ∀ k < cert.degree,
+      ∑ i ∈ Finset.range (cert.degree + 1),
+        cert.fieldCoefficient (cert.degree - i) * cert.fieldMoment (k + i) = 0) :
+    Function.Injective
+      (preconditionedCSRLinearMap matrixBytes header dR dL) := by
+  let u := encodedProbeLinearMap probe header.n
+  let A := preconditionedCSRLinearMap matrixBytes header dR dL
+  let w := encodedVector initial header.n
+  have moment_match : ∀ k < 2 * cert.degree,
+      cert.fieldMoment k = scalarKrylovMoment u A w k := by
+    intro k k_lt
+    exact cert.fieldMoment_eq_normalKrylovMoment_of_orbit orbit orbit_zero step
+      columns_valid (stored_match k k_lt)
+  have recurrence : ∀ k < cert.degree,
+      ∑ i ∈ Finset.range (cert.degree + 1),
+        cert.fieldCoefficient (cert.degree - i) *
+          scalarKrylovMoment u A w (k + i) = 0 := by
+    intro k k_lt
+    rw [← stored_recurrence k k_lt]
+    apply Finset.sum_congr rfl
+    intro i i_mem
+    have i_lt : i < cert.degree + 1 := Finset.mem_range.mp i_mem
+    rw [moment_match (k + i) (by omega)]
+  have dimension : Module.finrank CertificateField
+      (Fin header.n → CertificateField) = cert.degree := by
+    simp [degree_eq]
+  exact witness.injective_of_checked_pade cert u A w degree_gt_one dimension
+    bm_terms u_length_le v_length_le no_bad moment_match leading recurrence
+    constant_ne_zero
 
 end
 

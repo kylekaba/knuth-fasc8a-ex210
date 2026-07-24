@@ -1,5 +1,6 @@
 import Mathlib.LinearAlgebra.Matrix.Charpoly.Coeff
 import KnuthFasc8aEx210.CertificateMatrixSoundness
+import KnuthFasc8aEx210.Counterexample
 
 /-!
 # Transfer-block multiplicity assembly
@@ -14,6 +15,58 @@ namespace KnuthFasc8aEx210
 open Polynomial
 
 noncomputable section
+
+private theorem certificateField_fifty_ne_zero :
+    (50 : CertificateField) ≠ 0 := by
+  change algebraMap (ZMod 101) CertificateField (50 : ZMod 101) ≠ 0
+  intro h
+  have h_base : (50 : ZMod 101) = 0 :=
+    (algebraMap (ZMod 101) CertificateField).injective (by simpa using h)
+  have h_base_ne : (50 : ZMod 101) ≠ 0 := by native_decide
+  exact h_base_ne h_base
+
+private theorem certificateField_ninetyNine_eq_inv_fifty :
+    algebraMap (ZMod 101) CertificateField (99 : ZMod 101) =
+      (50 : CertificateField)⁻¹ := by
+  apply eq_inv_of_mul_eq_one_left
+  change algebraMap (ZMod 101) CertificateField (99 : ZMod 101) *
+      algebraMap (ZMod 101) CertificateField (50 : ZMod 101) = 1
+  rw [← map_mul]
+  have h : (99 : ZMod 101) * 50 = 1 := by native_decide
+  rw [h, map_one]
+
+/-- The concrete factor `1 - 50X` measures root multiplicity at `99` over
+`F₁₀₁`. -/
+theorem visibleFactor_emultiplicity_eq_rootMultiplicity
+    (p : ModPolynomial) (p_ne : p ≠ 0) :
+    emultiplicity visibleFactor p = p.rootMultiplicity (99 : F101) := by
+  have scalar_unit : IsUnit (C (-50 : F101)) := by
+    rw [isUnit_C, isUnit_iff_ne_zero]
+    native_decide
+  have factor_associated : Associated visibleFactor (X - C (99 : F101)) := by
+    rw [visibleFactor_eq_unit_mul_X_sub_C]
+    exact associated_unit_mul_left _ _ scalar_unit
+  rw [← emultiplicity_eq_of_associated_left factor_associated]
+  rw [(finiteMultiplicity_X_sub_C (99 : F101) p_ne).emultiplicity_eq_multiplicity]
+  rw [rootMultiplicity_eq_multiplicity, if_neg p_ne]
+
+theorem visibleFactor_prime : Prime visibleFactor := by
+  have scalar_unit : IsUnit (C (-50 : F101)) := by
+    rw [isUnit_C, isUnit_iff_ne_zero]
+    native_decide
+  have factor_associated : Associated visibleFactor (X - C (99 : F101)) := by
+    rw [visibleFactor_eq_unit_mul_X_sub_C]
+    exact associated_unit_mul_left _ _ scalar_unit
+  exact factor_associated.symm.prime (prime_X_sub_C (99 : F101))
+
+/-- Root multiplicity of a base-field polynomial is unchanged by the
+injective coefficient embedding into the certificate field. -/
+theorem rootMultiplicity_map_certificateField (p : ModPolynomial) (a : F101) :
+    (p.map (algebraMap F101 CertificateField)).rootMultiplicity
+        (algebraMap F101 CertificateField a) =
+      p.rootMultiplicity a := by
+  exact (eq_rootMultiplicity_map
+    (algebraMap F101 CertificateField).injective a).symm
 
 /-- Reversing a nonzero polynomial sends a nonzero root to its reciprocal,
 without changing its multiplicity.  This is the algebraic bridge from a
@@ -68,7 +121,7 @@ theorem rootMultiplicity_reverse_inv
         (pow_ne_zero _ (X_sub_C_ne_zero a⁻¹))) reverse_q_ne
 
 private theorem rootMultiplicity_list_prod
-    (mu : CertificateField) : ∀ polynomials : List CertificateField[X],
+    {K : Type*} [Field K] (mu : K) : ∀ polynomials : List K[X],
     (∀ p ∈ polynomials, p ≠ 0) →
       rootMultiplicity mu polynomials.prod =
         (polynomials.map (rootMultiplicity mu)).sum
@@ -84,6 +137,64 @@ private theorem rootMultiplicity_list_prod
       rw [List.prod_cons, rootMultiplicity_mul (mul_ne_zero p_ne prod_ne),
         rootMultiplicity_list_prod mu ps ps_nonzero]
       simp
+
+/-- Characteristic-power-series contribution of one singleton SCC with
+diagonal entry `d`. -/
+def singletonPowerSeriesFactor (d : F101) : ModPolynomial :=
+  1 - C d * X
+
+/-- Product of all singleton-SCC factors. -/
+def singletonPowerSeriesProduct (diagonal : List F101) : ModPolynomial :=
+  (diagonal.map singletonPowerSeriesFactor).prod
+
+private theorem singletonPowerSeriesFactor_ne_zero (d : F101) :
+    singletonPowerSeriesFactor d ≠ 0 := by
+  intro factor_zero
+  have coeff_zero := congrArg (fun p : ModPolynomial => p.coeff 0) factor_zero
+  simp [singletonPowerSeriesFactor] at coeff_zero
+
+private theorem singletonPowerSeriesFactor_not_root_ninetyNine
+    (d : F101) (d_ne : d ≠ 50) :
+    ¬(singletonPowerSeriesFactor d).IsRoot (99 : F101) := by
+  intro factor_root
+  have product_one : d * (99 : F101) = 1 := by
+    change eval (99 : F101) (singletonPowerSeriesFactor d) = 0 at factor_root
+    have one_product : (1 : F101) = d * 99 := by
+      simpa [singletonPowerSeriesFactor, sub_eq_zero] using factor_root
+    exact one_product.symm
+  apply d_ne
+  calc
+    d = (99 : F101)⁻¹ := eq_inv_of_mul_eq_one_left product_one
+    _ = 50 := by native_decide
+
+/-- Singleton SCCs whose loop weights are not `50` contribute no copy of
+Knuth's visible factor. -/
+theorem singletonPowerSeriesProduct_visibleFactor_emultiplicity_eq_zero
+    (diagonal : List F101) (none_fifty : ∀ d ∈ diagonal, d ≠ 50) :
+    emultiplicity visibleFactor (singletonPowerSeriesProduct diagonal) = 0 := by
+  have product_ne : singletonPowerSeriesProduct diagonal ≠ 0 := by
+    apply List.prod_ne_zero
+    intro zero_mem
+    simp only [List.mem_map] at zero_mem
+    obtain ⟨d, _, factor_eq_zero⟩ := zero_mem
+    exact singletonPowerSeriesFactor_ne_zero d factor_eq_zero
+  rw [visibleFactor_emultiplicity_eq_rootMultiplicity _ product_ne]
+  rw [singletonPowerSeriesProduct,
+    rootMultiplicity_list_prod (99 : F101)]
+  · norm_cast
+    simp only [List.map_map]
+    apply List.sum_eq_zero
+    intro multiplicity multiplicity_mem
+    simp only [List.mem_map] at multiplicity_mem
+    obtain ⟨d, d_mem, multiplicity_eq⟩ := multiplicity_mem
+    rw [← multiplicity_eq]
+    exact rootMultiplicity_eq_zero
+      (singletonPowerSeriesFactor_not_root_ninetyNine d (none_fifty d d_mem))
+  · intro p p_mem
+    simp only [List.mem_map] at p_mem
+    obtain ⟨d, _, polynomial_eq⟩ := p_mem
+    rw [← polynomial_eq]
+    exact singletonPowerSeriesFactor_ne_zero d
 
 /-- Product of the six nontrivial reflection blocks, with `Trel` repeated for
 the permutation-similar `Wrel` sector. -/
@@ -168,12 +279,53 @@ theorem certifiedOpenBlockPowerSeriesProduct_rootMultiplicity_inv_fifty_eq_two
       simp only [List.mem_cons, List.not_mem_nil, or_false] at zero_mem
       rcases zero_mem with h | h | h | h | h | h | h <;>
         exact (LinearMap.charpoly_monic _).ne_zero h.symm)
-  · change algebraMap (ZMod 101) CertificateField (50 : ZMod 101) ≠ 0
-    intro h
-    have h_base : (50 : ZMod 101) = 0 :=
-      (algebraMap (ZMod 101) CertificateField).injective (by simpa using h)
-    have h_base_ne : (50 : ZMod 101) ≠ 0 := by native_decide
-    exact h_base_ne h_base
+  · exact certificateField_fifty_ne_zero
+
+/-- If an `F₁₀₁` transfer polynomial becomes the certified block power
+series after scalar extension, then Knuth's visible factor has multiplicity
+exactly two in the original polynomial.  The remaining decomposition proof
+only has to supply the displayed map equality. -/
+theorem visibleFactor_emultiplicity_two_of_map_eq_certifiedBlockProduct
+    {nTp nTm nU1p nU1m nU2p nU2m : ℕ}
+    (baseProduct : ModPolynomial) (baseProduct_ne : baseProduct ≠ 0)
+    (tPlus : Module.End CertificateField (Fin nTp → CertificateField))
+    (tMinus : Module.End CertificateField (Fin nTm → CertificateField))
+    (u1Plus : Module.End CertificateField (Fin nU1p → CertificateField))
+    (u1Minus : Module.End CertificateField (Fin nU1m → CertificateField))
+    (u2Plus : Module.End CertificateField (Fin nU2p → CertificateField))
+    (u2Minus : Module.End CertificateField (Fin nU2m → CertificateField))
+    (map_eq : baseProduct.map (algebraMap F101 CertificateField) =
+      certifiedOpenBlockPowerSeriesProduct tPlus tMinus u1Plus u1Minus
+        u2Plus u2Minus)
+    (tPlus_one : tPlus.charpoly.rootMultiplicity (50 : CertificateField) = 1)
+    (tMinus_zero : tMinus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u1Plus_zero : u1Plus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u1Minus_zero : u1Minus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u2Plus_zero : u2Plus.charpoly.rootMultiplicity (50 : CertificateField) = 0)
+    (u2Minus_zero : u2Minus.charpoly.rootMultiplicity (50 : CertificateField) = 0) :
+    emultiplicity visibleFactor baseProduct = 2 := by
+  rw [visibleFactor_emultiplicity_eq_rootMultiplicity baseProduct baseProduct_ne]
+  rw [← rootMultiplicity_map_certificateField baseProduct (99 : F101), map_eq,
+    certificateField_ninetyNine_eq_inv_fifty]
+  exact_mod_cast
+    certifiedOpenBlockPowerSeriesProduct_rootMultiplicity_inv_fifty_eq_two
+      tPlus tMinus u1Plus u1Minus u2Plus u2Minus tPlus_one tMinus_zero
+      u1Plus_zero u1Minus_zero u2Plus_zero u2Minus_zero
+
+/-- Adding all singleton SCC factors to the certified nontrivial blocks leaves
+the visible-factor multiplicity equal to two when no singleton loop has weight
+`50`. -/
+theorem visibleFactor_emultiplicity_two_with_singletons
+    (baseBlockProduct : ModPolynomial)
+    (block_multiplicity : emultiplicity visibleFactor baseBlockProduct = 2)
+    (singletonDiagonal : List F101)
+    (none_fifty : ∀ d ∈ singletonDiagonal, d ≠ 50) :
+    emultiplicity visibleFactor
+        (baseBlockProduct * singletonPowerSeriesProduct singletonDiagonal) = 2 := by
+  rw [emultiplicity_mul visibleFactor_prime, block_multiplicity,
+    singletonPowerSeriesProduct_visibleFactor_emultiplicity_eq_zero
+      singletonDiagonal none_fifty]
+  norm_num
 
 end
 

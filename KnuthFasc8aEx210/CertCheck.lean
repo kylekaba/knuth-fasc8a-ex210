@@ -95,14 +95,56 @@ def verifySha256 (path : FilePath) (expected : String) (bytes : ByteArray) :
     throw <| IO.userError
       s!"SHA-256 mismatch for {path}: expected {expected}, got {actual}"
 
-def parseStepArg (default : Nat) (s : String) : Nat :=
+def parseStepArg? (s : String) : Option Nat :=
   if s == "all" || s == "full" then
-    1000000000
+    some 1000000000
   else
-    s.toNat?.getD default
+    s.toNat?
 
-def parseBMReplayFlag (s : String) : Bool :=
-  s == "bm" || s == "stored-bm" || s == "all"
+structure CheckOptions where
+  root : FilePath := "."
+  krylovPrefixMoments : Nat := 2
+  visiblePrefixSteps : Nat := 2
+  replayBM : Bool := false
+  rankLimit : Option Nat := none
+  full : Bool := false
+
+def checkUsage : String :=
+  "Usage: knuth_cert_check [OPTIONS]\n" ++
+  "\n" ++
+  "Options:\n" ++
+  "  --full              Replay every certificate completely\n" ++
+  "  --root PATH         Repository root (default: .)\n" ++
+  "  --krylov N|all      Krylov moments per rank certificate (default: 2)\n" ++
+  "  --visible N|all     Visible-polynomial Horner steps (default: 2)\n" ++
+  "  --bm                Replay Berlekamp--Massey\n" ++
+  "  --rank-limit N      Check only the first N rank certificates\n" ++
+  "  -h, --help          Show this help"
+
+def parseCheckOptions (args : List String) : Except String CheckOptions :=
+  let rec go (options : CheckOptions) : List String -> Except String CheckOptions
+    | [] => pure options
+    | "--full" :: rest => go { options with full := true } rest
+    | "--bm" :: rest => go { options with replayBM := true } rest
+    | "--root" :: value :: rest => go { options with root := value } rest
+    | "--krylov" :: value :: rest =>
+        match parseStepArg? value with
+        | some n => go { options with krylovPrefixMoments := n } rest
+        | none => throw s!"invalid --krylov value: {value}"
+    | "--visible" :: value :: rest =>
+        match parseStepArg? value with
+        | some n => go { options with visiblePrefixSteps := n } rest
+        | none => throw s!"invalid --visible value: {value}"
+    | "--rank-limit" :: value :: rest =>
+        match value.toNat? with
+        | some n => go { options with rankLimit := some n } rest
+        | none => throw s!"invalid --rank-limit value: {value}"
+    | ["--root"] => throw "missing value for --root"
+    | ["--krylov"] => throw "missing value for --krylov"
+    | ["--visible"] => throw "missing value for --visible"
+    | ["--rank-limit"] => throw "missing value for --rank-limit"
+    | option :: _ => throw s!"unknown option: {option}"
+  go {} args
 
 def checkKrylovMomentsWithProgress (label : String)
     (cert : RankCertificateFile) (matrixBytes : ByteArray)
@@ -279,31 +321,41 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cert.constantA.toNat}+{cert.constantB.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
-  let root : FilePath :=
-    match args with
-    | [] => "."
-    | x :: _ => x
+  if args.contains "--help" || args.contains "-h" then
+    IO.println checkUsage
+    return 0
+  let options ←
+    match parseCheckOptions args with
+    | .ok options => pure options
+    | .error message =>
+        IO.eprintln s!"FAIL: {message}\n\n{checkUsage}"
+        return 2
+  let root := options.root
   let krylovPrefixMoments : Nat :=
-    match args with
-    | _ :: k :: _ => parseStepArg 2 k
-    | _ => 2
+    if options.full then 1000000000 else options.krylovPrefixMoments
   let visiblePrefixSteps : Nat :=
-    match args with
-    | _ :: _ :: k :: _ => parseStepArg 2 k
-    | _ => 2
+    if options.full then 1000000000 else options.visiblePrefixSteps
   let replayBM : Bool :=
-    match args with
-    | _ :: _ :: _ :: mode :: _ => parseBMReplayFlag mode
-    | _ => false
+    options.full || options.replayBM
+  let expectations := rankExpectations root
   let rankLimit : Nat :=
-    match args with
-    | _ :: _ :: _ :: _ :: limit :: _ => limit.toNat?.getD (rankExpectations root).length
-    | _ => (rankExpectations root).length
+    if options.full then expectations.length
+    else options.rankLimit.getD expectations.length
+  let fullReplay :=
+    replayBM && 4107 <= visiblePrefixSteps && expectations.length <= rankLimit &&
+      expectations.all (fun e => 2 * e.order + 32 <= krylovPrefixMoments)
   try
+    if fullReplay then
+      IO.println "Running FULL Lean certificate replay."
+    else
+      IO.println "Running SMOKE Lean certificate check (not a full replay; use --full)."
     checkVisibleFiles root visiblePrefixSteps
-    for e in (rankExpectations root).take rankLimit do
+    for e in expectations.take rankLimit do
       checkRankFile e krylovPrefixMoments replayBM
-    IO.println "Lean certificate-file checks completed."
+    if fullReplay then
+      IO.println "FULL Lean certificate replay completed."
+    else
+      IO.println "SMOKE Lean certificate check completed; full replay was not performed."
     pure 0
   catch err =>
     IO.eprintln s!"FAIL: {err}"

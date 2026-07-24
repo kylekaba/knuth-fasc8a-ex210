@@ -118,7 +118,7 @@ In brief, the Lean executable:
   `KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility`, which proves
   that the certified multiplicity facts contradict `Q_5(z)^3 | Q_5^+(z)`.
 
-Quick Lean check:
+Type-check the Lean proof and run the quick certificate smoke check:
 
 ```sh
 lake build
@@ -126,14 +126,25 @@ lake build knuth_cert_check
 .lake/build/bin/knuth_cert_check
 ```
 
+The default executable run checks only a short prefix and labels itself
+`SMOKE`; it is not the full certificate replay.
+
 Full Lean certificate-file verification:
 
 ```sh
-.lake/build/bin/knuth_cert_check . all all bm
+.lake/build/bin/knuth_cert_check --full
 ```
 
 The full Lean verifier is intentionally slower than the C++ checker because it
 recomputes the large sparse Krylov streams in Lean.
+
+The formal theorem and executable checker have an explicit trust boundary. Lean's
+kernel checks that any value satisfying `WidthFiveCertificate` rules out cubic
+divisibility. Separately, the `IO` executable replays the binary certificates and
+reports success or failure; it does not turn that runtime result into a
+`WidthFiveCertificate` proof term. Thus this is a Lean-implemented certificate
+verifier plus a kernel-checked logical core, not a single end-to-end kernel proof
+from the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

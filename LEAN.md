@@ -15,7 +15,7 @@ Lean proves that these facts contradict the proposed divisibility
 `Q_5(z)^3 | Q_5^+(z)`, and therefore disprove the universal claim for
 all `m >= 5`.
 
-Build:
+Type-check the Lean library (this does not run the certificate checker):
 
 ```sh
 lake build
@@ -75,30 +75,32 @@ lake build knuth_cert_check
 .lake/build/bin/knuth_cert_check
 ```
 
-Pass a second argument to check a longer rank-certificate Krylov prefix, and a
-third argument to check a longer visible-polynomial prefix. Either argument may
-be `all` for the full replay:
+The no-argument run is intentionally a quick smoke check. Its output is labeled
+`SMOKE`; use `--full` for the complete replay described below.
+
+Use named options to check longer rank-certificate Krylov and
+visible-polynomial prefixes. Either count may be `all`:
 
 ```sh
-.lake/build/bin/knuth_cert_check . 4
-.lake/build/bin/knuth_cert_check . 4 4
-.lake/build/bin/knuth_cert_check . all 0
-.lake/build/bin/knuth_cert_check . 0 all
+.lake/build/bin/knuth_cert_check --krylov 4
+.lake/build/bin/knuth_cert_check --krylov 4 --visible 4
+.lake/build/bin/knuth_cert_check --krylov all --visible 0
+.lake/build/bin/knuth_cert_check --krylov 0 --visible all
 ```
 
-Pass `bm` as a fourth argument to replay Berlekamp--Massey over the stored
-rank-certificate moments. A fifth argument limits the number of rank
-certificates, which is useful for timing:
+Use `--bm` to replay Berlekamp--Massey over the stored rank-certificate
+moments. `--rank-limit` limits the number of rank certificates, which is useful
+for timing:
 
 ```sh
-.lake/build/bin/knuth_cert_check . 0 0 bm 1
-.lake/build/bin/knuth_cert_check . 0 0 bm
+.lake/build/bin/knuth_cert_check --krylov 0 --visible 0 --bm --rank-limit 1
+.lake/build/bin/knuth_cert_check --krylov 0 --visible 0 --bm
 ```
 
 The full certificate-file verification is:
 
 ```sh
-.lake/build/bin/knuth_cert_check . all all bm
+.lake/build/bin/knuth_cert_check --full
 ```
 
 That command is intentionally expensive. It prints progress every 5000
@@ -116,9 +118,23 @@ Lean certificate-file checks completed.
 
 This is a real Lean-side check of the actual certificate files, including the
 full visible-factor replay and a full Berlekamp--Massey replay over the stored
-rank-certificate moments. With the `all all bm` arguments, the Lean executable
-also recomputes all `2N + 32` Wiedemann moments from the actual sparse matrices
-for all six rank certificates.
+rank-certificate moments. In `--full` mode, the Lean executable also recomputes
+all `2N + 32` Wiedemann moments from the actual sparse matrices for all six rank
+certificates.
+
+## Trust boundary
+
+There are two deliberately separate layers:
+
+1. Lean's kernel checks the generic theorem that the three fields of a
+   `WidthFiveCertificate` contradict cubic divisibility.
+2. The `IO` executable parses and replays the checked-in computational
+   certificates.
+
+The executable reports a runtime success value; it does not construct a
+kernel-checked inhabitant of `WidthFiveCertificate`. Consequently, this project
+provides a Lean-implemented certificate verifier and a kernel-checked logical
+core, but not a single end-to-end kernel theorem derived from the binary files.
 
 Main theorem:
 
@@ -126,8 +142,8 @@ Main theorem:
 KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility
 ```
 
-The concrete arithmetic obstruction is:
+The reusable multiplicity obstruction is:
 
 ```lean
-KnuthFasc8aEx210.repository_cubic_multiplicity_test_fails
+KnuthFasc8aEx210.not_pow_divides_of_multiplicity
 ```

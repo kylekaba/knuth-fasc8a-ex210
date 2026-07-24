@@ -1,6 +1,7 @@
 import Mathlib.LinearAlgebra.FiniteDimensional.Basic
 import KnuthFasc8aEx210.CertificateFieldEncoding
 import KnuthFasc8aEx210.CertificatePadeSoundness
+import KnuthFasc8aEx210.BorderLemma
 
 /-!
 # Soundness of encoded matrix-certificate operations
@@ -176,6 +177,162 @@ def preconditionedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
   (encodedDiagonalLinearMap dL header.n).comp
     ((shiftedCSRLinearMap matrixBytes header).comp
       (encodedDiagonalLinearMap dR header.n))
+
+/-- Interpret the prime-field eigenvector bytes in the extension field. -/
+def encodedEigenVector (eig : EigenvectorFile) (n : ℕ) :
+    Fin n → CertificateField :=
+  fun row => algebraMap (ZMod 101) CertificateField (eigenValueAt eig row)
+
+/-- Coordinate functional used as the bottom row of the bordered matrix. -/
+def coordinateLinearMap {n : ℕ} (pivot : Fin n) :
+    (Fin n → CertificateField) →ₗ[CertificateField] CertificateField where
+  toFun x := x pivot
+  map_add' _ _ := rfl
+  map_smul' _ _ := rfl
+
+/-- The parsed bordered operator on `n+1` encoded coordinates.  The first `n`
+coordinates are `(M - 50I)x + c v`; the last is the pivot coordinate of `x`. -/
+def borderedCSRLinearMap (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n) :
+    Module.End CertificateField (Fin (header.n + 1) → CertificateField) where
+  toFun x := Fin.lastCases (x pivot.castSucc) (fun row =>
+    shiftedCSRLinearMap matrixBytes header (fun col => x col.castSucc) row +
+      x (Fin.last header.n) * encodedEigenVector eig header.n row)
+  map_add' x y := by
+    funext i
+    refine Fin.lastCases ?_ (fun row => ?_) i
+    · simp
+    · simp only [Fin.lastCases_castSucc, Pi.add_apply]
+      have shifted_add :
+          shiftedCSRLinearMap matrixBytes header
+              (fun col => x col.castSucc + y col.castSucc) row =
+            shiftedCSRLinearMap matrixBytes header
+                (fun col => x col.castSucc) row +
+              shiftedCSRLinearMap matrixBytes header
+                (fun col => y col.castSucc) row := by
+        rw [show (fun col : Fin header.n =>
+            x col.castSucc + y col.castSucc) =
+          (fun col => x col.castSucc) + (fun col => y col.castSucc) by rfl]
+        exact congrFun
+          ((shiftedCSRLinearMap matrixBytes header).map_add
+            (fun col => x col.castSucc) (fun col => y col.castSucc)) row
+      rw [shifted_add]
+      ring
+  map_smul' c x := by
+    funext i
+    refine Fin.lastCases ?_ (fun row => ?_) i
+    · simp
+    · simp only [Fin.lastCases_castSucc, Pi.smul_apply, RingHom.id_apply]
+      have shifted_smul :
+          shiftedCSRLinearMap matrixBytes header
+              (fun col => c * x col.castSucc) row =
+            c * shiftedCSRLinearMap matrixBytes header
+              (fun col => x col.castSucc) row := by
+        rw [show (fun col : Fin header.n => c * x col.castSucc) =
+          c • (fun col => x col.castSucc) by rfl]
+        exact congrFun
+          ((shiftedCSRLinearMap matrixBytes header).map_smul c
+            (fun col => x col.castSucc)) row
+      change shiftedCSRLinearMap matrixBytes header
+          (fun col => c * x col.castSucc) row +
+        (c * x (Fin.last header.n)) * encodedEigenVector eig header.n row =
+          c * (shiftedCSRLinearMap matrixBytes header
+            (fun col => x col.castSucc) row +
+              x (Fin.last header.n) * encodedEigenVector eig header.n row)
+      rw [shifted_smul]
+      ring
+
+/-- Split an `(n+1)`-coordinate vector into its first `n` coordinates and its
+last scalar coordinate. -/
+def finSuccProdLinearEquiv (n : ℕ) :
+    (Fin (n + 1) → CertificateField) ≃ₗ[CertificateField]
+      (Fin n → CertificateField) × CertificateField where
+  toFun x := (fun i => x i.castSucc, x (Fin.last n))
+  invFun z := Fin.lastCases z.2 z.1
+  left_inv x := by
+    funext i
+    refine Fin.lastCases ?_ (fun j => ?_) i <;> simp
+  right_inv z := by
+    apply Prod.ext
+    · funext i
+      simp
+    · simp
+  map_add' x y := by
+    apply Prod.ext
+    · funext i
+      rfl
+    · rfl
+  map_smul' c x := by
+    apply Prod.ext
+    · funext i
+      rfl
+    · rfl
+
+/-- The coordinate-level bordered CSR map is exactly the abstract bordered
+operator after splitting off the last coordinate. -/
+theorem finSuccProdLinearEquiv_borderedCSRLinearMap
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (x : Fin (header.n + 1) → CertificateField) :
+    finSuccProdLinearEquiv header.n
+        (borderedCSRLinearMap matrixBytes header eig pivot x) =
+      borderedOperator (shiftedCSRLinearMap matrixBytes header)
+        (encodedEigenVector eig header.n) (coordinateLinearMap pivot)
+        (finSuccProdLinearEquiv header.n x) := by
+  apply Prod.ext
+  · funext row
+    simp [finSuccProdLinearEquiv, borderedCSRLinearMap, borderedOperator,
+      coordinateLinearMap, Fin.lastCases_castSucc]
+  · simp [finSuccProdLinearEquiv, borderedCSRLinearMap, borderedOperator,
+      coordinateLinearMap, Fin.lastCases_last]
+
+/-- Injectivity of the coordinate-level bordered CSR map transfers to the
+abstract bordered operator used by `BorderLemma`. -/
+theorem borderedOperator_injective_of_borderedCSRLinearMap_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (injective : Function.Injective
+      (borderedCSRLinearMap matrixBytes header eig pivot)) :
+    Function.Injective
+      (borderedOperator (shiftedCSRLinearMap matrixBytes header)
+        (encodedEigenVector eig header.n) (coordinateLinearMap pivot)) := by
+  intro x y equal
+  let e := finSuccProdLinearEquiv header.n
+  apply e.symm.injective
+  apply injective
+  apply e.injective
+  rw [finSuccProdLinearEquiv_borderedCSRLinearMap,
+    finSuccProdLinearEquiv_borderedCSRLinearMap]
+  simpa [e] using equal
+
+/-- The checked bordered CSR operator is already in the exact form required to
+deduce that `50` has algebraic multiplicity one in the unbordered transfer
+matrix. -/
+theorem csr_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (pivot : Fin header.n)
+    (eigen_residual : shiftedCSRLinearMap matrixBytes header
+      (encodedEigenVector eig header.n) = 0)
+    (pivot_ne_zero : encodedEigenVector eig header.n pivot ≠ 0)
+    (border_injective : Function.Injective
+      (borderedCSRLinearMap matrixBytes header eig pivot)) :
+    (csrLinearMap matrixBytes header).charpoly.rootMultiplicity
+      (50 : CertificateField) = 1 := by
+  have eigenvector : csrLinearMap matrixBytes header
+      (encodedEigenVector eig header.n) =
+        (50 : CertificateField) • encodedEigenVector eig header.n := by
+    have shifted_eq : csrLinearMap matrixBytes header
+          (encodedEigenVector eig header.n) -
+        (50 : CertificateField) • encodedEigenVector eig header.n = 0 := by
+      simpa [shiftedCSRLinearMap] using eigen_residual
+    exact sub_eq_zero.mp shifted_eq
+  have abstract_injective :=
+    borderedOperator_injective_of_borderedCSRLinearMap_injective
+      matrixBytes header eig pivot border_injective
+  exact charpoly_rootMultiplicity_eq_one_of_bordered_injective
+    (csrLinearMap matrixBytes header) (50 : CertificateField)
+    (encodedEigenVector eig header.n) (coordinateLinearMap pivot)
+    eigenvector pivot_ne_zero abstract_injective
 
 /-- Linear functional represented by the encoded Wiedemann probe vector. -/
 def encodedProbeLinearMap (probe : ByteArray) (n : ℕ) :

@@ -168,7 +168,10 @@ There are two deliberately separate layers:
    this interpretation. Zero proof-shaped recurrence, canonical Krylov, and CSR
    mismatch counts now derive the orbit, all stored moment matches, and matrix
    bounds internally and compose with the Padé witness to prove normal-operator
-   injectivity.
+   injectivity. The parsed bordered CSR map is also represented as the exact
+   `[M - 50I, v; pivot, 0]` endomorphism, proved linearly equivalent to the
+   abstract border operator, and connected directly to characteristic-root
+   multiplicity one.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -204,4 +207,5 @@ The bordered-matrix conclusions are:
 KnuthFasc8aEx210.ker_eq_span_of_bordered_injective
 KnuthFasc8aEx210.not_mem_range_of_bordered_injective
 KnuthFasc8aEx210.charpoly_rootMultiplicity_eq_one_of_bordered_injective
+KnuthFasc8aEx210.csr_charpoly_rootMultiplicity_fifty_eq_one_of_bordered_injective
 ```

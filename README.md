@@ -164,10 +164,13 @@ argument that a normalized scalar transfer denominator divides
 observable `50`-eigenvector annihilated by the reversed denominator recurrence
 forces `1-50X` to divide that denominator. What remains outside the kernel
 theorem is the concrete reflection/SCC decomposition, connecting the reduced
-denominator to that recurrence, replaying the closed cyclic-span/eigenvector
-certificate as proof terms, and converting the checked-in binary results into
-inhabitants of those hypotheses. Thus the repository is not yet a single
-end-to-end kernel proof from the checked-in bytes.
+denominator to that recurrence, replaying the closed byte-level residual and
+observable-coordinate checks as proof terms, and converting the checked-in
+binary results into inhabitants of those hypotheses. The cyclic-span step is
+now kernel checked for the exact certificate formula `r=g(M²)beta`, as is the
+derivation of its `50`-eigenvector from the checked `76` square-eigenvector
+relation. Thus the repository is not yet a single end-to-end kernel proof from
+the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

@@ -124,6 +124,152 @@ def IsForwardRecurrence (M : Matrix n n K) (observe start : n → K)
   ∀ k : ℕ, ∑ i ∈ Finset.range (p.natDegree + 1),
     p.coeff i * scalarKrylovSequence M observe start (k + i) = 0
 
+@[simp] theorem scalarKrylovSequence_zero
+    (M : Matrix n n K) (observe : n → K) (k : ℕ) :
+    scalarKrylovSequence M observe 0 k = 0 := by
+  simp [scalarKrylovSequence]
+
+@[simp] theorem scalarKrylovSequence_add
+    (M : Matrix n n K) (observe u v : n → K) (k : ℕ) :
+    scalarKrylovSequence M observe (u + v) k =
+      scalarKrylovSequence M observe u k +
+        scalarKrylovSequence M observe v k := by
+  simp [scalarKrylovSequence, Matrix.mulVec_add, dotProduct_add]
+
+@[simp] theorem scalarKrylovSequence_smul
+    (M : Matrix n n K) (observe v : n → K) (a : K) (k : ℕ) :
+    scalarKrylovSequence M observe (a • v) k =
+      a * scalarKrylovSequence M observe v k := by
+  simp [scalarKrylovSequence, Matrix.mulVec_smul, dotProduct_smul]
+
+/-- For fixed matrix, observation, and polynomial, the startup vectors whose
+scalar sequences satisfy the recurrence form a subspace. -/
+def recurrenceStartSubmodule (M : Matrix n n K) (observe : n → K)
+    (p : K[X]) : Submodule K (n → K) where
+  carrier := {start | IsForwardRecurrence M observe start p}
+  zero_mem' := by
+    change IsForwardRecurrence M observe 0 p
+    intro k
+    simp
+  add_mem' := by
+    intro u v hu hv
+    change IsForwardRecurrence M observe u p at hu
+    change IsForwardRecurrence M observe v p at hv
+    change IsForwardRecurrence M observe (u + v) p
+    intro k
+    simp only [scalarKrylovSequence_add, mul_add, Finset.sum_add_distrib,
+      hu k, hv k, add_zero]
+  smul_mem' := by
+    intro a v hv
+    change IsForwardRecurrence M observe v p at hv
+    change IsForwardRecurrence M observe (a • v) p
+    intro k
+    simp only [scalarKrylovSequence_smul]
+    simp_rw [← mul_assoc, mul_comm (p.coeff _) a, mul_assoc]
+    rw [← Finset.mul_sum, hv k, mul_zero]
+
+theorem scalarKrylovSequence_mulVec_pow
+    (M : Matrix n n K) (observe start : n → K) (j k : ℕ) :
+    scalarKrylovSequence M observe (M ^ j *ᵥ start) k =
+      scalarKrylovSequence M observe start (k + j) := by
+  unfold scalarKrylovSequence
+  rw [mulVec_mulVec, ← pow_add]
+
+/-- A recurrence remains valid after shifting the startup vector forward
+along its matrix orbit. -/
+theorem IsForwardRecurrence.mulVec_pow
+    (M : Matrix n n K) (observe start : n → K) (p : K[X])
+    (recurrence : IsForwardRecurrence M observe start p) (j : ℕ) :
+    IsForwardRecurrence M observe (M ^ j *ᵥ start) p := by
+  intro k
+  simpa [scalarKrylovSequence_mulVec_pow, add_assoc, add_comm, add_left_comm]
+    using recurrence (k + j)
+
+/-- Every vector in the Krylov span of a startup vector inherits all forward
+recurrences of its observed scalar sequence. -/
+theorem IsForwardRecurrence.of_mem_krylovSpan
+    (M : Matrix n n K) (observe start v : n → K) (p : K[X])
+    (recurrence : IsForwardRecurrence M observe start p)
+    (v_mem : v ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start)) :
+    IsForwardRecurrence M observe v p := by
+  apply (show v ∈ recurrenceStartSubmodule M observe p from ?_)
+  apply (Submodule.span_le.mpr ?_) v_mem
+  rintro _ ⟨j, rfl⟩
+  exact recurrence.mulVec_pow M observe start p j
+
+/-- The Krylov span is invariant under one further application of its
+matrix. -/
+theorem mulVec_mem_krylovSpan
+    (M : Matrix n n K) (start v : n → K)
+    (v_mem : v ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start)) :
+    M *ᵥ v ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start) := by
+  induction v_mem using Submodule.span_induction with
+  | mem x hx =>
+      obtain ⟨j, rfl⟩ := hx
+      simpa [pow_succ', mulVec_mulVec] using
+        (Submodule.subset_span
+          (s := Set.range fun j : ℕ ↦ M ^ j *ᵥ start)
+          (Set.mem_range_self (j + 1)))
+  | zero => simp
+  | add x y _ _ hx hy =>
+      simpa [Matrix.mulVec_add] using
+        (Submodule.add_mem _ hx hy)
+  | smul a x _ hx =>
+      simpa [Matrix.mulVec_smul] using
+        (Submodule.smul_mem _ a hx)
+
+/-- The concrete polynomial-in-`M²` vector used by the visible-factor
+certificate, written independently of the executable Horner evaluator. -/
+def evenPolynomialKrylovVector
+    (M : Matrix n n K) (start : n → K) (g : K[X]) : n → K :=
+  ∑ i ∈ Finset.range (g.natDegree + 1),
+    g.coeff i • (M ^ (2 * i) *ᵥ start)
+
+theorem evenPolynomialKrylovVector_mem_krylovSpan
+    (M : Matrix n n K) (start : n → K) (g : K[X]) :
+    evenPolynomialKrylovVector M start g ∈ Submodule.span K
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start) := by
+  apply Submodule.sum_mem
+  intro i _
+  apply Submodule.smul_mem
+  exact Submodule.subset_span (Set.mem_range_self (2 * i))
+
+/-- The vector `r + 99 M r` constructed by the width-five visible-factor
+certificate lies in the startup Krylov span. -/
+theorem visibleEigenvectorCandidate_mem_krylovSpan
+    (M : Matrix n n F101) (start : n → F101) (g : ModPolynomial) :
+    let r := evenPolynomialKrylovVector M start g
+    r + (99 : F101) • (M *ᵥ r) ∈ Submodule.span F101
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start) := by
+  dsimp
+  apply Submodule.add_mem
+  · exact evenPolynomialKrylovVector_mem_krylovSpan M start g
+  · apply Submodule.smul_mem
+    exact mulVec_mem_krylovSpan M start _
+      (evenPolynomialKrylovVector_mem_krylovSpan M start g)
+
+/-- The `76 = 50²` square-eigenvector check implies the derived vector is
+a `50`-eigenvector; this makes the second executable residual check
+mathematically redundant. -/
+theorem derived_fifty_eigenvector_of_square_seventySix
+    (M : Matrix n n F101) (r : n → F101)
+    (square_eigenvector : M ^ 2 *ᵥ r = (76 : F101) • r) :
+    M *ᵥ (r + (99 : F101) • (M *ᵥ r)) =
+      (50 : F101) • (r + (99 : F101) • (M *ᵥ r)) := by
+  rw [Matrix.mulVec_add, Matrix.mulVec_smul, mulVec_mulVec]
+  rw [← pow_two]
+  rw [square_eigenvector]
+  ext i
+  change (M *ᵥ r) i + 99 * (76 * r i) =
+    50 * (r i + 99 * (M *ᵥ r) i)
+  have h₁ : (99 : F101) * 76 = 50 := by native_decide
+  have h₂ : (50 : F101) * 99 = 1 := by native_decide
+  rw [← mul_assoc, h₁, mul_add, ← mul_assoc, h₂, one_mul]
+  ring
+
 theorem pow_mulVec_of_mulVec_eq_smul
     (M : Matrix n n K) (v : n → K) (a : K)
     (eigenvector : M *ᵥ v = a • v) :
@@ -190,6 +336,63 @@ theorem visibleFactor_dvd_of_reverse_recurrence_eigenvector
     rw [visibleFactor_eq_unit_mul_X_sub_C]
     exact associated_unit_mul_left _ _ scalar_unit
   exact factor_associated.dvd_iff_dvd_left.mpr linear_dvd
+
+/-- Closed-side visibility in the form used by the certificate: it is enough
+for the visible eigenvector to lie in the startup vector's Krylov span. -/
+theorem visibleFactor_dvd_of_reverse_recurrence_of_mem_krylovSpan
+    (M : Matrix n n F101) (observe start v : n → F101)
+    (q : ModPolynomial)
+    (recurrence : IsForwardRecurrence M observe start q.reverse)
+    (v_mem : v ∈ Submodule.span F101
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start))
+    (eigenvector : M *ᵥ v = (50 : F101) • v)
+    (visible : dotProduct observe v ≠ 0) :
+    visibleFactor ∣ q := by
+  apply visibleFactor_dvd_of_reverse_recurrence_eigenvector
+    M observe v q
+  · exact recurrence.of_mem_krylovSpan M observe start v q.reverse v_mem
+  · exact eigenvector
+  · exact visible
+
+/-- The closed visibility theorem specialized to the exact vector formula
+replayed by `visibleFactorFullCheck`. -/
+theorem visibleFactor_dvd_of_visibleEigenvectorCandidate
+    (M : Matrix n n F101) (observe start : n → F101)
+    (g q : ModPolynomial)
+    (recurrence : IsForwardRecurrence M observe start q.reverse)
+    (eigenvector :
+      let r := evenPolynomialKrylovVector M start g
+      M *ᵥ (r + (99 : F101) • (M *ᵥ r)) =
+        (50 : F101) • (r + (99 : F101) • (M *ᵥ r)))
+    (visible :
+      let r := evenPolynomialKrylovVector M start g
+      dotProduct observe (r + (99 : F101) • (M *ᵥ r)) ≠ 0) :
+    visibleFactor ∣ q := by
+  let r := evenPolynomialKrylovVector M start g
+  apply visibleFactor_dvd_of_reverse_recurrence_of_mem_krylovSpan
+    M observe start (r + (99 : F101) • (M *ᵥ r)) q recurrence
+  · exact visibleEigenvectorCandidate_mem_krylovSpan M start g
+  · exact eigenvector
+  · exact visible
+
+/-- Strongest closed visibility interface: the certificate need only expose
+its polynomial-in-`M²` vector, the checked `76` residual, and a nonzero
+observable coordinate. -/
+theorem visibleFactor_dvd_of_visibleCandidate_square_eigenvector
+    (M : Matrix n n F101) (observe start : n → F101)
+    (g q : ModPolynomial)
+    (recurrence : IsForwardRecurrence M observe start q.reverse)
+    (square_eigenvector :
+      let r := evenPolynomialKrylovVector M start g
+      M ^ 2 *ᵥ r = (76 : F101) • r)
+    (visible :
+      let r := evenPolynomialKrylovVector M start g
+      dotProduct observe (r + (99 : F101) • (M *ᵥ r)) ≠ 0) :
+    visibleFactor ∣ q := by
+  apply visibleFactor_dvd_of_visibleEigenvectorCandidate
+    M observe start g q recurrence
+  · exact derived_fifty_eigenvector_of_square_seventySix M _ square_eigenvector
+  · exact visible
 
 end Recurrences
 

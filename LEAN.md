@@ -187,7 +187,10 @@ There are two deliberately separate layers:
    At the recurrence layer, Lean now proves that every observable eigenvalue
    is a root of a forward recurrence polynomial and specializes reversal over
    `F_101`: an observable `50`-eigenvector for the reversed denominator
-   recurrence forces `1-50X` to divide the denominator.
+   recurrence forces `1-50X` to divide the denominator. It also proves that
+   recurrences propagate across the startup vector's full Krylov span, that
+   the certificate formula `r=g(M²)beta` lies in that span, and that
+   `M²r=76r` implies `r+99Mr` is a `50`-eigenvector.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -200,8 +203,9 @@ identification, the closed visible-factor replay, and the conversion of runtime
 file checks into proof terms remain on the external side of the boundary. The
 generic transfer-denominator interpretation and the recurrence-to-visible-factor
 argument are now kernel checked. Connecting the reduced denominator to that
-recurrence and proving the concrete closed eigenvector lies in the startup
-vector's Krylov span remain to be wired to the certificate replay.
+recurrence and proving the byte-level closed residual and observable-coordinate
+checks denote the corresponding mathematical statements remain to be wired to
+the certificate replay.
 
 The certificate-to-nonsingularity bridge is:
 

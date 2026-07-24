@@ -889,7 +889,17 @@ def extDot (u x : Array ExtElt) (n : Nat) : ExtElt :=
       ai := ai + p.b.toNat
     pure { a := u8Mod101 ar, b := u8Mod101 ai }
 
-def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
+def extDotByteSums (u x : ByteArray) : Nat → Nat × Nat
+  | 0 => (0, 0)
+  | i + 1 =>
+      let totals := extDotByteSums u x i
+      let j := 2 * i
+      (totals.1 + u[j]!.toNat * x[j]!.toNat +
+          2 * u[j + 1]!.toNat * x[j + 1]!.toNat,
+        totals.2 + u[j]!.toNat * x[j + 1]!.toNat +
+          u[j + 1]!.toNat * x[j]!.toNat)
+
+private unsafe def extDotBytesFast (u x : ByteArray) (n : Nat) : ExtElt :=
   Id.run do
     let mut ar := 0
     let mut ai := 0
@@ -902,6 +912,13 @@ def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
       ar := ar + ua * xa + 2 * ub * xb
       ai := ai + ua * xb + ub * xa
     pure { a := u8Mod101 ar, b := u8Mod101 ai }
+
+/-- Encoded extension-field dot product.  The recursive specification is used
+in proofs; compiled certificate replay uses the one-pass accumulator. -/
+@[implemented_by extDotBytesFast]
+def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
+  let totals := extDotByteSums u x n
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
 
 def matrixApplyShifted (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : Array ExtElt) : ParseM (Array ExtElt) := do

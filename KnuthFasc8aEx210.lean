@@ -6,4 +6,5 @@ import KnuthFasc8aEx210.CertificateField
 import KnuthFasc8aEx210.CertificateFiles
 import KnuthFasc8aEx210.CertificateFieldEncoding
 import KnuthFasc8aEx210.CertificatePadeSoundness
+import KnuthFasc8aEx210.CertificateMatrixSoundness
 import KnuthFasc8aEx210.SHA256

@@ -146,7 +146,9 @@ There are two deliberately separate layers:
    the `1 - 50X` multiplicity obstruction, and the bordered-matrix kernel/range
    lemma. It also proves that the encoded Padé convolution and zero mismatch
    count imply the complete polynomial Bézout identity, and composes that
-   identity with the Hankel/Krylov nonsingularity theorem.
+   identity with the Hankel/Krylov nonsingularity theorem. The encoded byte
+   dot product is proved equal to the ordinary `CertificateField` vector dot
+   product used by scalar Krylov moments.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 

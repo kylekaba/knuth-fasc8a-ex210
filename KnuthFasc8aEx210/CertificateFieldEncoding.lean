@@ -65,6 +65,41 @@ theorem zmod101_of_u8SubMod101 {x y : UInt8}
     rw [ZMod.natCast_self]
     simp
 
+/-- Exhaustive soundness check for the actual 101-input inverse-search loop.
+The quantified proposition is closed and decidable, so `native_decide`
+checks every base-field input and every possible returned byte. -/
+private theorem inverseMod101?_sound_finite :
+    ∀ a : Fin 101, ∀ q : UInt8,
+      inverseMod101? a = some q →
+        (a * q.toNat) % 101 = 1 ∧ q.toNat < 101 := by
+  native_decide
+
+theorem inverseMod101?_sound {a : ℕ} (a_lt : a < 101) {q : UInt8}
+    (result : inverseMod101? a = some q) :
+    (a : ZMod 101) * q.toNat = 1 ∧ q.toNat < 101 := by
+  have checked := inverseMod101?_sound_finite ⟨a, a_lt⟩ q result
+  constructor
+  · rw [← Nat.cast_mul, ← ZMod.natCast_mod (a * q.toNat) 101, checked.1]
+    norm_num
+  · exact checked.2
+
+private theorem zmod101_if_negByte (b : UInt8) (b_lt : b.toNat < 101) :
+    ((if b == 0 then 0 else 101 - b.toNat : ℕ) : ZMod 101) = -b.toNat := by
+  split
+  · rename_i b_zero
+    have : b = 0 := beq_iff_eq.mp b_zero
+    simp [this]
+  · rename_i b_ne_zero
+    have b_pos : 0 < b.toNat := by
+      have : b ≠ 0 := by simpa only [beq_iff_eq] using b_ne_zero
+      have b_toNat_ne : b.toNat ≠ 0 := by
+        intro b_toNat_zero
+        apply this
+        exact UInt8.toNat_inj.mp (by simpa using b_toNat_zero)
+      omega
+    rw [Nat.cast_sub (by omega), ZMod.natCast_self]
+    simp
+
 private theorem zmod101_natCast_eq_zero_iff_of_lt {n : ℕ} (n_lt : n < 101) :
     (n : ZMod 101) = 0 ↔ n = 0 := by
   constructor
@@ -128,5 +163,105 @@ theorem ExtElt.toCertificateField_scale (c : ℕ) (x : ExtElt) :
       zmod101_of_u8Mod101 (c * x.a.toNat)
   · simpa only [Nat.cast_mul] using
       zmod101_of_u8Mod101 (c * x.b.toNat)
+
+/-- Soundness of the executable quadratic-field inverse.  A successful
+return is canonical and multiplies the input to one in `CertificateField`. -/
+theorem ExtElt.inv_sound {x y : ExtElt} (x_canonical : x.IsCanonical)
+    (result : x.inv = .ok y) :
+    y.IsCanonical ∧ y.toCertificateField * x.toCertificateField = 1 := by
+  let denom : ℕ :=
+    (x.a.toNat * x.a.toNat + 101 -
+      (2 * x.b.toNat * x.b.toNat) % 101) % 101
+  have denom_lt : denom < 101 := Nat.mod_lt _ (by omega)
+  change (match inverseMod101? denom with
+    | none => (Except.error "attempted to invert zero extension-field element" : ParseM ExtElt)
+    | some q => (Except.ok {
+        a := u8Mod101 (x.a.toNat * q.toNat)
+        b := u8Mod101
+          ((if x.b == 0 then 0 else 101 - x.b.toNat) * q.toNat) } : ParseM ExtElt)) =
+      Except.ok y at result
+  generalize inverse_result : inverseMod101? denom = inverse at result
+  cases inverse with
+  | none => simp at result
+  | some q =>
+      have y_eq : y = {
+          a := u8Mod101 (x.a.toNat * q.toNat)
+          b := u8Mod101
+            ((if x.b == 0 then 0 else 101 - x.b.toNat) * q.toNat) } := by
+        simpa [inverse_result] using result.symm
+      subst y
+      constructor
+      · constructor <;> simp [toNat_u8Mod101, Nat.mod_lt]
+      · have q_inverse := inverseMod101?_sound denom_lt inverse_result
+        have denom_cast : (denom : ZMod 101) =
+            (x.a.toNat : ZMod 101) ^ 2 -
+              2 * (x.b.toNat : ZMod 101) ^ 2 := by
+          dsimp [denom]
+          rw [ZMod.natCast_mod]
+          rw [Nat.cast_sub (by
+            have := Nat.mod_lt (2 * x.b.toNat * x.b.toNat) (by omega : 0 < 101)
+            omega)]
+          rw [Nat.cast_add, ZMod.natCast_self, add_zero]
+          rw [ZMod.natCast_mod]
+          push_cast
+          ring
+        have encoded_inverse :
+            ({
+              a := u8Mod101 (x.a.toNat * q.toNat)
+              b := u8Mod101
+                ((if x.b == 0 then 0 else 101 - x.b.toNat) * q.toNat)
+            } : ExtElt).toCertificateField =
+              algebraMap (ZMod 101) CertificateField q.toNat *
+                certificatePair x.a.toNat (-(x.b.toNat : ZMod 101)) := by
+          rw [ExtElt.toCertificateField, ← certificatePair_scale]
+          congr 1
+          · simpa only [Nat.cast_mul, mul_comm] using
+              zmod101_of_u8Mod101 (x.a.toNat * q.toNat)
+          · rw [zmod101_of_u8Mod101, Nat.cast_mul,
+              zmod101_if_negByte x.b x_canonical.2]
+            ring
+        rw [encoded_inverse, ExtElt.toCertificateField]
+        calc
+          _ = algebraMap (ZMod 101) CertificateField q.toNat *
+              (certificatePair x.a.toNat x.b.toNat *
+                certificatePair x.a.toNat (-(x.b.toNat : ZMod 101))) := by ring
+          _ = algebraMap (ZMod 101) CertificateField q.toNat *
+              algebraMap (ZMod 101) CertificateField
+                ((x.a.toNat : ZMod 101) ^ 2 -
+                  2 * (x.b.toNat : ZMod 101) ^ 2) := by
+            rw [certificatePair_mul_conjugate]
+          _ = algebraMap (ZMod 101) CertificateField
+              ((q.toNat : ZMod 101) *
+                ((x.a.toNat : ZMod 101) ^ 2 -
+                  2 * (x.b.toNat : ZMod 101) ^ 2)) := by rw [map_mul]
+          _ = 1 := by
+            rw [← denom_cast, mul_comm, q_inverse.1, map_one]
+
+theorem ExtElt.inv_toCertificateField {x y : ExtElt}
+    (x_canonical : x.IsCanonical) (result : x.inv = .ok y) :
+    y.toCertificateField = x.toCertificateField⁻¹ := by
+  exact eq_inv_of_mul_eq_one_left (x.inv_sound x_canonical result).2
+
+/-- Soundness of the `Except`-valued division operation used at every
+nonzero BM discrepancy. -/
+theorem ExtElt.div_sound {x y z : ExtElt} (y_canonical : y.IsCanonical)
+    (result : x.div y = .ok z) :
+    z.IsCanonical ∧
+      z.toCertificateField = x.toCertificateField / y.toCertificateField := by
+  change (y.inv >>= fun yInv => Except.ok (x.mul yInv)) = Except.ok z at result
+  generalize inverse_result : y.inv = inverse at result
+  cases inverse with
+  | error message =>
+      change Except.error message = Except.ok z at result
+      contradiction
+  | ok yInv =>
+      change Except.ok (x.mul yInv) = Except.ok z at result
+      have z_eq : z = x.mul yInv := (Except.ok.inj result).symm
+      subst z
+      constructor
+      · exact ExtElt.isCanonical_mul x yInv
+      · rw [ExtElt.toCertificateField_mul,
+          y.inv_toCertificateField y_canonical inverse_result]
+        rfl
 
 end KnuthFasc8aEx210

@@ -512,6 +512,10 @@ def u8SubMod101 (x y : UInt8) : UInt8 :=
   else
     UInt8.ofNat (x.toNat + 101 - y.toNat)
 
+def ExtElt.sub (x y : ExtElt) : ExtElt where
+  a := u8SubMod101 x.a y.a
+  b := u8SubMod101 x.b y.b
+
 def ExtElt.scale (c : Nat) (x : ExtElt) : ExtElt where
   a := u8Mod101 (c * x.a.toNat)
   b := u8Mod101 (c * x.b.toNat)
@@ -553,65 +557,51 @@ structure BMResult where
 def berlekampMassey (moments : ByteArray) (used : Nat) : ParseM BMResult := do
   require (2 * used <= moments.size) "not enough moments for BM replay"
   let capacity := used + 1
-  let mut cr := Array.replicate capacity (0 : UInt8)
-  let mut ci := Array.replicate capacity (0 : UInt8)
-  let mut br := Array.replicate capacity (0 : UInt8)
-  let mut bi := Array.replicate capacity (0 : UInt8)
-  let mut tr := Array.replicate capacity (0 : UInt8)
-  let mut ti := Array.replicate capacity (0 : UInt8)
-  cr := cr.set! 0 1
-  br := br.set! 0 1
+  let zero : ExtElt := { a := 0, b := 0 }
+  let one : ExtElt := { a := 1, b := 0 }
+  let mut connection := Array.replicate capacity zero
+  let mut previous := Array.replicate capacity zero
+  let mut saved := Array.replicate capacity zero
+  connection := connection.set! 0 one
+  previous := previous.set! 0 one
   let mut clen := 1
   let mut blen := 1
   let mut degree := 0
   let mut shift := 1
-  let mut discrepancyBase : ExtElt := { a := 1, b := 0 }
+  let mut discrepancyBase := one
   for n in [0:used] do
-    let s := pairAt moments n
-    let mut dr := s.a.toNat
-    let mut di := s.b.toNat
+    let mut discrepancy := pairAt moments n
     for i in [1:degree + 1] do
       let q := pairAt moments (n - i)
-      dr := dr + cr[i]!.toNat * q.a.toNat + 2 * ci[i]!.toNat * q.b.toNat
-      di := di + cr[i]!.toNat * q.b.toNat + ci[i]!.toNat * q.a.toNat
-    let d : ExtElt := { a := u8Mod101 dr, b := u8Mod101 di }
-    if d.isZero then
+      discrepancy := discrepancy.add (connection[i]!.mul q)
+    if discrepancy.isZero then
       shift := shift + 1
     else
       let jump := 2 * degree <= n
       let oldLength := clen
       if jump then
         for i in [0:clen] do
-          tr := tr.set! i cr[i]!
-          ti := ti.set! i ci[i]!
-      let coef ← d.div discrepancyBase
+          saved := saved.set! i connection[i]!
+      let coef ← discrepancy.div discrepancyBase
       let need := blen + shift
       if clen < need then
         clen := need
       for j in [0:blen] do
-        let pr := coef.a.toNat * br[j]!.toNat + 2 * coef.b.toNat * bi[j]!.toNat
-        let pi := coef.a.toNat * bi[j]!.toNat + coef.b.toNat * br[j]!.toNat
-        let rr := u8Mod101 pr
-        let ri := u8Mod101 pi
         let k := j + shift
-        cr := cr.set! k (u8SubMod101 cr[k]! rr)
-        ci := ci.set! k (u8SubMod101 ci[k]! ri)
+        connection := connection.set! k
+          (connection[k]!.sub (coef.mul previous[j]!))
       if jump then
         degree := n + 1 - degree
         for i in [0:oldLength] do
-          br := br.set! i tr[i]!
-          bi := bi.set! i ti[i]!
+          previous := previous.set! i saved[i]!
         blen := oldLength
-        discrepancyBase := d
+        discrepancyBase := discrepancy
         shift := 1
       else
         shift := shift + 1
   let mut coefficients := Array.emptyWithCapacity (degree + 1)
   for i in [0:degree + 1] do
-    coefficients := coefficients.push {
-      a := if i < clen then cr[i]! else 0,
-      b := if i < clen then ci[i]! else 0
-    }
+    coefficients := coefficients.push (if i < clen then connection[i]! else zero)
   pure { degree, coefficients }
 
 structure BMReplayCheck where

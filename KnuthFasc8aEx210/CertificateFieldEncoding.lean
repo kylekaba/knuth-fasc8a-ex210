@@ -65,6 +65,12 @@ theorem zmod101_of_u8SubMod101 {x y : UInt8}
     rw [ZMod.natCast_self]
     simp
 
+theorem ExtElt.isCanonical_sub {x y : ExtElt}
+    (x_canonical : x.IsCanonical) (y_canonical : y.IsCanonical) :
+    (x.sub y).IsCanonical := by
+  exact ⟨isCanonical_u8SubMod101 x_canonical.1 y_canonical.1,
+    isCanonical_u8SubMod101 x_canonical.2 y_canonical.2⟩
+
 /-- Exhaustive soundness check for the actual 101-input inverse-search loop.
 The quantified proposition is closed and decidable, so `native_decide`
 checks every base-field input and every possible returned byte. -/
@@ -137,6 +143,17 @@ theorem ExtElt.toCertificateField_add (x y : ExtElt) :
       zmod101_of_u8Mod101 (x.a.toNat + y.a.toNat)
   · simpa only [Nat.cast_add] using
       zmod101_of_u8Mod101 (x.b.toNat + y.b.toNat)
+
+@[simp]
+theorem ExtElt.toCertificateField_sub {x y : ExtElt}
+    (x_canonical : x.IsCanonical) (y_canonical : y.IsCanonical) :
+    (x.sub y).toCertificateField =
+      x.toCertificateField - y.toCertificateField := by
+  rw [ExtElt.toCertificateField, ExtElt.sub, ExtElt.toCertificateField,
+    ExtElt.toCertificateField, ← certificatePair_sub]
+  congr 1
+  · exact zmod101_of_u8SubMod101 x_canonical.1 y_canonical.1
+  · exact zmod101_of_u8SubMod101 x_canonical.2 y_canonical.2
 
 @[simp]
 theorem ExtElt.toCertificateField_mul (x y : ExtElt) :

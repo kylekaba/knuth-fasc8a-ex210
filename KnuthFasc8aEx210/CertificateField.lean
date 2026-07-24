@@ -87,6 +87,12 @@ theorem certificatePair_neg (a b : ZMod 101) :
   simp only [certificatePair, map_neg]
   ring
 
+theorem certificatePair_sub (a b c d : ZMod 101) :
+    certificatePair (a - c) (b - d) =
+      certificatePair a b - certificatePair c d := by
+  simp only [certificatePair, map_sub]
+  ring
+
 theorem certificatePair_scale (c a b : ZMod 101) :
     certificatePair (c * a) (c * b) =
       algebraMap (ZMod 101) CertificateField c * certificatePair a b := by

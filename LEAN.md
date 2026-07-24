@@ -184,6 +184,10 @@ There are two deliberately separate layers:
    contribute zero, and formalizes the adjugate construction of a scalar
    transfer rational function. Its constant-term-one normalized denominator
    is proved to divide `det(I-XM)`, yielding the modular cubic obstruction.
+   At the recurrence layer, Lean now proves that every observable eigenvalue
+   is a root of a forward recurrence polynomial and specializes reversal over
+   `F_101`: an observable `50`-eigenvector for the reversed denominator
+   recurrence forces `1-50X` to divide the denominator.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -194,7 +198,10 @@ and algebraic core, but not a single end-to-end kernel theorem derived from the
 binary files. The concrete reflection/SCC decomposition and `Wrel ~= Trel`
 identification, the closed visible-factor replay, and the conversion of runtime
 file checks into proof terms remain on the external side of the boundary. The
-generic transfer-denominator interpretation itself is now kernel checked.
+generic transfer-denominator interpretation and the recurrence-to-visible-factor
+argument are now kernel checked. Connecting the reduced denominator to that
+recurrence and proving the concrete closed eigenvector lies in the startup
+vector's Krylov span remain to be wired to the certificate replay.
 
 The certificate-to-nonsingularity bridge is:
 

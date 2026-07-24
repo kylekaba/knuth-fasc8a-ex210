@@ -160,11 +160,14 @@ checked block multiplicities to the raw `F_101` CSR operators, assembles the
 full reflected block product (including both copies of `Trel`), proves that
 non-50 singleton blocks add no visible factor, and formalizes the adjugate
 argument that a normalized scalar transfer denominator divides
-`det(I-XM)`. What remains outside the kernel theorem is the concrete
-reflection/SCC decomposition, the closed visible-factor replay as a proof
-term, and conversion of the checked-in binary results into inhabitants of
-those hypotheses. Thus the repository is not yet a single end-to-end kernel
-proof from the checked-in bytes.
+`det(I-XM)`. It also proves the closed-side visibility implication: an
+observable `50`-eigenvector annihilated by the reversed denominator recurrence
+forces `1-50X` to divide that denominator. What remains outside the kernel
+theorem is the concrete reflection/SCC decomposition, connecting the reduced
+denominator to that recurrence, replaying the closed cyclic-span/eigenvector
+certificate as proof terms, and converting the checked-in binary results into
+inhabitants of those hypotheses. Thus the repository is not yet a single
+end-to-end kernel proof from the checked-in bytes.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

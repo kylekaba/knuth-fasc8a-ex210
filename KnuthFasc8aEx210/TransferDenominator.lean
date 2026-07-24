@@ -109,6 +109,90 @@ theorem normalizedTransferDenominator_dvd_charpolyRev
   (normalizedTransferDenominator_associated M start finish).dvd.trans
     (transferDenominator_dvd_charpolyRev M start finish)
 
+section Recurrences
+
+/-- The scalar sequence observed from repeated application of a transfer
+matrix. -/
+def scalarKrylovSequence (M : Matrix n n K) (observe start : n → K)
+    (k : ℕ) : K :=
+  dotProduct observe (M ^ k *ᵥ start)
+
+/-- A polynomial gives a forward recurrence for the observed Krylov
+sequence when its coefficients annihilate every shifted window. -/
+def IsForwardRecurrence (M : Matrix n n K) (observe start : n → K)
+    (p : K[X]) : Prop :=
+  ∀ k : ℕ, ∑ i ∈ Finset.range (p.natDegree + 1),
+    p.coeff i * scalarKrylovSequence M observe start (k + i) = 0
+
+theorem pow_mulVec_of_mulVec_eq_smul
+    (M : Matrix n n K) (v : n → K) (a : K)
+    (eigenvector : M *ᵥ v = a • v) :
+    ∀ k : ℕ, M ^ k *ᵥ v = a ^ k • v := by
+  intro k
+  induction k with
+  | zero => simp
+  | succ k ih =>
+      rw [pow_succ', ← mulVec_mulVec v M (M ^ k), ih, mulVec_smul,
+        eigenvector]
+      simp [pow_succ, smul_smul]
+
+theorem scalarKrylovSequence_of_eigenvector
+    (M : Matrix n n K) (observe v : n → K) (a : K)
+    (eigenvector : M *ᵥ v = a • v) (k : ℕ) :
+    scalarKrylovSequence M observe v k =
+      a ^ k * dotProduct observe v := by
+  rw [scalarKrylovSequence,
+    pow_mulVec_of_mulVec_eq_smul M v a eigenvector k,
+    dotProduct_smul]
+  rfl
+
+/-- An observable eigenvector forces every forward recurrence polynomial to
+vanish at its eigenvalue. -/
+theorem IsForwardRecurrence.isRoot_of_eigenvector
+    (M : Matrix n n K) (observe v : n → K) (p : K[X]) (a : K)
+    (recurrence : IsForwardRecurrence M observe v p)
+    (eigenvector : M *ᵥ v = a • v)
+    (visible : dotProduct observe v ≠ 0) :
+    p.IsRoot a := by
+  rw [Polynomial.IsRoot.def]
+  have recurrence_zero := recurrence 0
+  simp only [zero_add,
+    scalarKrylovSequence_of_eigenvector M observe v a eigenvector] at recurrence_zero
+  simp_rw [← mul_assoc] at recurrence_zero
+  rw [← Finset.sum_mul, ← Polynomial.eval_eq_sum_range] at recurrence_zero
+  exact (mul_eq_zero.mp recurrence_zero).resolve_right visible
+
+/-- Over `F₁₀₁`, an observable eigenvector at eigenvalue `50` turns a
+forward recurrence for the reversed denominator into the factor
+`1 - 50X` of the denominator itself. -/
+theorem visibleFactor_dvd_of_reverse_recurrence_eigenvector
+    (M : Matrix n n F101) (observe v : n → F101) (q : ModPolynomial)
+    (recurrence : IsForwardRecurrence M observe v q.reverse)
+    (eigenvector : M *ᵥ v = (50 : F101) • v)
+    (visible : dotProduct observe v ≠ 0) :
+    visibleFactor ∣ q := by
+  have reverse_root : q.reverse.IsRoot (50 : F101) :=
+    recurrence.isRoot_of_eigenvector M observe v q.reverse 50
+      eigenvector visible
+  have ninetyNine_ne_zero : (99 : F101) ≠ 0 := by native_decide
+  letI : Invertible (99 : F101) := invertibleOfNonzero ninetyNine_ne_zero
+  have ninetyNine_inv : (99 : F101)⁻¹ = 50 := by native_decide
+  have q_root : q.IsRoot (99 : F101) := by
+    rw [Polynomial.IsRoot.def]
+    apply (eval₂_reverse_eq_zero_iff (RingHom.id F101) (99 : F101) q).mp
+    simpa [invOf_eq_inv, ninetyNine_inv] using reverse_root.eq_zero
+  have linear_dvd : X - C (99 : F101) ∣ q := dvd_iff_isRoot.mpr q_root
+  have scalar_unit : IsUnit (C (-50 : F101)) := by
+    rw [isUnit_C, isUnit_iff_ne_zero]
+    native_decide
+  have factor_associated :
+      Associated visibleFactor (X - C (99 : F101)) := by
+    rw [visibleFactor_eq_unit_mul_X_sub_C]
+    exact associated_unit_mul_left _ _ scalar_unit
+  exact factor_associated.dvd_iff_dvd_left.mpr linear_dvd
+
+end Recurrences
+
 section Blocks
 
 variable {m o : Type*} [Fintype m] [DecidableEq m]

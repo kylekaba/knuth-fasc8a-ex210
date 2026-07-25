@@ -771,6 +771,25 @@ theorem visibleFactor_dvd_of_reverse_recurrence_of_mem_krylovSpan
   · exact eigenvector
   · exact visible
 
+/-- Eventual-recurrence version for an arbitrary visible eigenvector in the
+startup Krylov span. -/
+theorem visibleFactor_dvd_of_eventual_reverse_recurrence_of_mem_krylovSpan
+    (M : Matrix n n F101) (observe start v : n → F101)
+    (q : ModPolynomial)
+    (recurrence : IsEventuallyForwardRecurrence M observe start q.reverse)
+    (v_mem : v ∈ Submodule.span F101
+      (Set.range fun j : ℕ ↦ M ^ j *ᵥ start))
+    (eigenvector : M *ᵥ v = (50 : F101) • v)
+    (visible : dotProduct observe v ≠ 0) :
+    visibleFactor ∣ q := by
+  have v_recurrence :
+      IsEventuallyForwardRecurrence M observe v q.reverse :=
+    recurrence.of_mem_krylovSpan M observe start v q.reverse v_mem
+  have reverse_root : q.reverse.IsRoot (50 : F101) :=
+    v_recurrence.isRoot_of_eigenvector M observe v q.reverse 50
+      eigenvector (by native_decide) visible
+  exact visibleFactor_dvd_of_reverse_root q reverse_root
+
 /-- The closed visibility theorem specialized to the exact vector formula
 replayed by `visibleFactorFullCheck`. -/
 theorem visibleFactor_dvd_of_visibleEigenvectorCandidate

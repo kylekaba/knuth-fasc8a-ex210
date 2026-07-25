@@ -13,7 +13,7 @@ REGEN := build/regenerated
 PROGRAMS := transfer_generator extract_blocks sanity_counts bruteforce_5x4 \
             closed_factor verify_visible wiedemann_ext verify_rank_cert pade_witness
 
-.PHONY: all clean sanity visible-check rank-check verify regen-check certs-regenerate pade-witnesses hashes
+.PHONY: all clean sanity visible-check visible-checkpoints rank-check verify regen-check certs-regenerate pade-witnesses hashes
 
 all: $(addprefix $(BIN)/,$(PROGRAMS))
 
@@ -51,8 +51,11 @@ sanity: all
 	$(BIN)/bruteforce_5x4
 	$(BIN)/sanity_counts $(DATA)
 
-visible-check: all
+visible-check: $(BIN)/verify_visible
 	$(BIN)/verify_visible $(DATA)
+
+visible-checkpoints: $(BIN)/verify_visible
+	$(BIN)/verify_visible $(DATA) $(DATA)/certs/visible76.khc1
 
 rank-check: all
 	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_plus.kmc $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_eigen50.vec
@@ -78,6 +81,7 @@ regen-check: all
 certs-regenerate: all
 	mkdir -p $(DATA)/certs
 	$(BIN)/closed_factor $(DATA) 9000 0
+	$(MAKE) visible-checkpoints
 	$(BIN)/wiedemann_ext $(DATA)/blocks/Trel_plus.kmc border 1 $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_eigen50.vec
 	$(BIN)/wiedemann_ext $(DATA)/blocks/Trel_minus.kmc normal 1 $(DATA)/certs/Trel_minus_shift50.kwc2
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U1_plus.kmc normal 1 $(DATA)/certs/U1_plus_shift50.kwc2

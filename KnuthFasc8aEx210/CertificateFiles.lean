@@ -9,6 +9,7 @@ These definitions parse the binary formats used by
 * `KMC201` sparse matrices modulo 101;
 * `KMV101` eigenvectors;
 * `KMP101` visible-factor polynomials;
+* `KMH101` visible-factor Horner checkpoints;
 * `KMW2CERT` Wiedemann/Berlekamp--Massey rank certificates.
 
 The parsers are intentionally small and fail closed on malformed or trailing
@@ -313,6 +314,41 @@ def parsePolynomial (bytes : ByteArray) : ParseM PolynomialFile := do
       s!"polynomial coefficient is not reduced modulo 101 at index {i}"
   require (coefficients[length - 1]!.toNat != 0) "zero leading polynomial coefficient"
   pure { length, degree := length - 1, coefficients }
+
+/-- Bounded checkpoints for the visible polynomial's Horner evaluation. -/
+structure HornerCheckpointFile where
+  n : Nat
+  steps : Nat
+  chunk : Nat
+  count : Nat
+  values : ByteArray
+
+def parseHornerCheckpoints (bytes : ByteArray) : ParseM HornerCheckpointFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicPrefix c "KMH101"
+  let (n, c1) ← c.readU32LE "Horner checkpoint dimension"
+  c := c1
+  let (steps, c1) ← c.readU32LE "Horner step count"
+  c := c1
+  let (chunk, c1) ← c.readU32LE "Horner chunk size"
+  c := c1
+  let (count, c1) ← c.readU32LE "Horner checkpoint count"
+  c := c1
+  require (0 < n) "zero Horner checkpoint dimension"
+  require (0 < chunk) "zero Horner checkpoint chunk size"
+  require (count == (steps + chunk - 1) / chunk + 1)
+    "Horner checkpoint count does not match step and chunk counts"
+  let (values, c1) ← c.readBytes (count * n) "Horner checkpoint vectors"
+  c := c1
+  requireNoTrailing c
+  for i in [0 : values.size] do
+    require (values[i]!.toNat < 101)
+      s!"Horner checkpoint entry is not reduced modulo 101 at index {i}"
+  pure { n, steps, chunk, count, values }
+
+def hornerCheckpointValueAt (checkpoints : HornerCheckpointFile)
+    (checkpoint coordinate : Nat) : Nat :=
+  checkpoints.values[checkpoint * checkpoints.n + coordinate]!.toNat
 
 structure FinishVectorFile where
   n : Nat

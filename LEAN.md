@@ -199,21 +199,26 @@ There are two deliberately separate layers:
    cancellation preserves that representation for the canonical reduced
    `RatFunc.denom`, and its reverse is an eventual recurrence. Consequently a
    zero visible counter proves the factor in the actual normalized reduced
-   transfer denominator without an exposed recurrence assumption.
+   transfer denominator without an exposed recurrence assumption. The actual
+   checked-in closed matrix, finish vector, polynomial, and 4,107-step Horner
+   replay are now closed into this theorem: the bytes are embedded at
+   elaboration, four bounded checkpoint segments are proved independently and
+   composed in the kernel, and the final checkpoint's square-eigenvector and
+   visible-coordinate check yield
+   `embedded_visibleFactor_dvd_normalizedTransferDenominator`.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
 The executable reports a runtime success value; it does not construct a
 kernel-checked inhabitant of `WidthFiveCertificate`. Consequently, this project
 provides a Lean-implemented certificate verifier and a kernel-checked logical
-and algebraic core, but not a single end-to-end kernel theorem derived from the
-binary files. The concrete reflection/SCC decomposition and `Wrel ~= Trel`
-identification, the closed visible-factor replay, and the conversion of runtime
-file checks into proof terms remain on the external side of the boundary. The
-generic transfer-denominator interpretation and the recurrence-to-visible-factor
-argument are now kernel checked, including the reduced-denominator recurrence.
-Closing the byte-level visible check for embedded checked-in constants remains;
-the mathematical bad-count-to-normalized-denominator bridge itself is complete.
+and algebraic core, but not yet a single end-to-end theorem for the complete
+counterexample. The closed visible-factor replay is now internal from embedded
+checked-in bytes through the normalized reduced denominator. What remains on
+the external side is closing the six rank-certificate results from embedded
+bytes, the concrete reflection/SCC decomposition and `Wrel ~= Trel`
+identification, and the integer normalization/final `WidthFiveCertificate`
+construction.
 
 The certificate-to-nonsingularity bridge is:
 

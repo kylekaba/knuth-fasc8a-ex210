@@ -138,6 +138,11 @@ lake build knuth_cert_check
 .lake/build/bin/knuth_cert_check
 ```
 
+On a clean build, `lake build` also proves the embedded closed visible-factor
+certificate.  The 4,107-step sparse Horner replay is split into four independent
+checkpoint segments so Lake can check them concurrently; this expensive work is
+cached in the resulting `.olean` files.
+
 The default executable run checks only a short prefix and labels itself
 `SMOKE`; it is not the full certificate replay.
 
@@ -153,9 +158,15 @@ recomputes the large sparse Krylov streams in Lean.
 The formal theorem and executable checker have an explicit trust boundary.
 Lean's kernel checks the polynomial argument over `Q[z]`, Gauss's lemma over
 `Z[z]`, reduction modulo 101, factor multiplicity, and the bordered-matrix
-kernel/range lemma. Separately, the `IO` executable replays the binary
-certificates and reports success or failure; it does not turn that runtime
-result into a `WidthFiveCertificate` proof term. Lean now also descends the
+kernel/range lemma. The closed matrix, finish vector, polynomial, and bounded
+Horner checkpoints are now embedded as closed Lean constants. Four
+proof-shaped segment counters replay every Horner step, their mathematical
+equalities compose to keep the final vector in the startup Krylov span, and a
+final residual check proves `1-50X` in the actual normalized reduced closed
+denominator. This conclusion no longer depends on running the `IO` executable.
+Separately, that executable still replays all binary certificates and reports
+success or failure; the remaining rank-certificate results are not yet closed
+into a concrete `WidthFiveCertificate` proof term. Lean also descends the
 checked block multiplicities to the raw `F_101` CSR operators, assembles the
 full reflected block product (including both copies of `Trel`), proves that
 non-50 singleton blocks add no visible factor, and formalizes the adjugate
@@ -164,18 +175,13 @@ argument that a normalized scalar transfer denominator divides
 observable `50`-eigenvector annihilated by the reversed denominator recurrence
 forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
 denominator is now proved, via formal power series and adjugate cancellation,
-to supply the required eventual recurrence. What remains outside the kernel
-theorem is the concrete reflection/SCC decomposition, closing the byte-level
-checks on embedded checked-in data, and converting the remaining binary
-results into inhabitants of their proof-shaped hypotheses. The cyclic-span step is
-now kernel checked for the exact certificate formula `r=g(M²)beta`, as is the
-derivation of its `50`-eigenvector from the checked `76` square-eigenvector
-relation. A proof-shaped `visibleCertificateBad` counter now gives a direct
-kernel theorem from zero residual/coordinate failures to the visible factor,
-with the existing Horner/CSR replay as its native implementation. It now proves
-visibility directly in the actual normalized reduced transfer denominator.
-Embedding the checked-in bytes as closed Lean data remains. Thus the repository
-is not yet a single end-to-end kernel proof from the checked-in bytes.
+to supply the required eventual recurrence. What remains outside the final
+kernel theorem is closing the six rank-certificate checks from embedded bytes,
+the concrete reflection/SCC decomposition and `Wrel ~= Trel` identification,
+and the integer normalization that constructs the final
+`WidthFiveCertificate`. Thus the repository is not yet a single end-to-end
+kernel proof of the complete counterexample, but the closed visible side is now
+concrete from checked-in bytes through the reduced denominator.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 

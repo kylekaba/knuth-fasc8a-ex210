@@ -11,4 +11,5 @@ import KnuthFasc8aEx210.TransferMultiplicity
 import KnuthFasc8aEx210.TransferDenominator
 import KnuthFasc8aEx210.VisibleCertificateSoundness
 import KnuthFasc8aEx210.EmbeddedVisibleCertificate
+import KnuthFasc8aEx210.EmbeddedTrelPlusRankCertificate
 import KnuthFasc8aEx210.SHA256

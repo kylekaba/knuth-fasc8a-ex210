@@ -1,10 +1,23 @@
 CXX ?= g++
 CXXFLAGS ?= -O3 -std=c++17 -DNDEBUG
-OMPFLAGS ?= -fopenmp
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-MACOS_SDK := $(shell xcrun --show-sdk-path)
-CXXFLAGS += -I$(MACOS_SDK)/usr/include/c++/v1 -isysroot $(MACOS_SDK)
+BREW_GXX := $(lastword $(sort $(wildcard /opt/homebrew/bin/g++-[0-9]* /usr/local/bin/g++-[0-9]*)))
+ifneq ($(BREW_GXX),)
+ifeq ($(origin CXX),default)
+CXX := $(BREW_GXX)
+endif
+OMPFLAGS ?= -fopenmp
+else
+LIBOMP_PREFIX := $(shell brew --prefix libomp 2>/dev/null)
+ifneq ($(LIBOMP_PREFIX),)
+OMPFLAGS ?= -Xpreprocessor -fopenmp -I$(LIBOMP_PREFIX)/include -L$(LIBOMP_PREFIX)/lib -lomp
+else
+OMPFLAGS ?=
+endif
+endif
+else
+OMPFLAGS ?= -fopenmp
 endif
 BIN := build/bin
 DATA := data
@@ -13,7 +26,7 @@ REGEN := build/regenerated
 PROGRAMS := transfer_generator extract_blocks sanity_counts bruteforce_5x4 \
             closed_factor verify_visible wiedemann_ext verify_rank_cert pade_witness
 
-.PHONY: all clean sanity visible-check visible-checkpoints rank-check verify regen-check certs-regenerate pade-witnesses hashes
+.PHONY: all clean sanity visible-check visible-checkpoints rank-check rank-checkpoint-verify verify regen-check certs-regenerate pade-witnesses hashes
 
 all: $(addprefix $(BIN)/,$(PROGRAMS))
 
@@ -65,6 +78,15 @@ rank-check: all
 	$(BIN)/verify_rank_cert $(DATA)/blocks/U2_plus.kmc $(DATA)/certs/U2_plus_shift50.kwc2 -
 	$(BIN)/verify_rank_cert $(DATA)/blocks/U2_minus.kmc $(DATA)/certs/U2_minus_shift50.kwc2 -
 
+$(REGEN)/Trel_plus_border.krc1: $(BIN)/verify_rank_cert \
+    $(DATA)/blocks/Trel_plus.kmc $(DATA)/certs/Trel_plus_border.kwc2 \
+    $(DATA)/certs/Trel_plus_eigen50.vec $(DATA)/certs/Trel_plus_border.krc1
+	mkdir -p $(REGEN)
+	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_plus.kmc $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_eigen50.vec $@
+
+rank-checkpoint-verify: $(REGEN)/Trel_plus_border.krc1
+	cmp $(DATA)/certs/Trel_plus_border.krc1 $<
+
 verify: sanity visible-check rank-check
 
 regen-check: all
@@ -88,6 +110,7 @@ certs-regenerate: all
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U1_minus.kmc normal 1 $(DATA)/certs/U1_minus_shift50.kwc2
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U2_plus.kmc normal 1 $(DATA)/certs/U2_plus_shift50.kwc2
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U2_minus.kmc normal 1 $(DATA)/certs/U2_minus_shift50.kwc2
+	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_plus.kmc $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_eigen50.vec $(DATA)/certs/Trel_plus_border.krc1
 	$(MAKE) pade-witnesses
 
 pade-witnesses: $(BIN)/pade_witness

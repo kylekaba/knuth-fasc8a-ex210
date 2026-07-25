@@ -10,6 +10,7 @@ These definitions parse the binary formats used by
 * `KMV101` eigenvectors;
 * `KMP101` visible-factor polynomials;
 * `KMH101` visible-factor Horner checkpoints;
+* `KRC101V1` bounded rank-certificate Krylov checkpoints;
 * `KMW2CERT` Wiedemann/Berlekamp--Massey rank certificates.
 
 The parsers are intentionally small and fail closed on malformed or trailing
@@ -349,6 +350,59 @@ def parseHornerCheckpoints (bytes : ByteArray) : ParseM HornerCheckpointFile := 
 def hornerCheckpointValueAt (checkpoints : HornerCheckpointFile)
     (checkpoint coordinate : Nat) : Nat :=
   checkpoints.values[checkpoint * checkpoints.n + coordinate]!.toNat
+
+/-- Bounded checkpoints for a rank certificate's preconditioned Krylov
+orbit.  Coordinates are interleaved pairs in the certificate extension
+field. -/
+structure RankCheckpointFile where
+  version : Nat
+  order : Nat
+  steps : Nat
+  chunk : Nat
+  count : Nat
+  seed : UInt64
+  matrixHash : UInt64
+  eigenHash : UInt64
+  values : ByteArray
+
+def parseRankCheckpoints (bytes : ByteArray) : ParseM RankCheckpointFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicExact c "KRC101V1"
+  let (version, c1) ← c.readU32LE "rank checkpoint version"
+  c := c1
+  let (order, c1) ← c.readU32LE "rank checkpoint order"
+  c := c1
+  let (steps, c1) ← c.readU32LE "rank checkpoint step count"
+  c := c1
+  let (chunk, c1) ← c.readU32LE "rank checkpoint chunk size"
+  c := c1
+  let (count, c1) ← c.readU32LE "rank checkpoint count"
+  c := c1
+  let (seed, c1) ← c.readU64LE "rank checkpoint seed"
+  c := c1
+  let (matrixHash, c1) ← c.readU64LE "rank checkpoint matrix hash"
+  c := c1
+  let (eigenHash, c1) ← c.readU64LE "rank checkpoint eigenvector hash"
+  c := c1
+  require (version == 1) "unsupported rank checkpoint version"
+  require (0 < order) "zero rank checkpoint order"
+  require (0 < chunk) "zero rank checkpoint chunk size"
+  require (count == (steps + chunk - 1) / chunk + 1)
+    "rank checkpoint count does not match step and chunk counts"
+  let (values, c1) ← c.readBytes (count * 2 * order)
+    "rank checkpoint vectors"
+  c := c1
+  requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 values)
+    "rank checkpoint coordinate is not reduced modulo 101"
+  pure {
+    version, order, steps, chunk, count, seed, matrixHash, eigenHash, values
+  }
+
+def rankCheckpointVector (checkpoints : RankCheckpointFile)
+    (checkpoint : Nat) : ByteArray :=
+  checkpoints.values.extract (checkpoint * 2 * checkpoints.order)
+    ((checkpoint + 1) * 2 * checkpoints.order)
 
 structure FinishVectorFile where
   n : Nat

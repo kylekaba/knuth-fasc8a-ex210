@@ -125,6 +125,10 @@ In brief, the Lean executable:
   bordered injectivity implies `ker(H) = span(v)` and `v` is not in the range
   of `H`; using Mathlib's generalized-eigenspace theorem, Lean then proves the
   eigenvalue has characteristic-polynomial root multiplicity exactly one.
+- embeds the `Trel_plus` bordered rank certificate and a deterministic
+  checkpoint file, replays all 33 Krylov segments, composes their exact moment
+  equalities, and proves in the kernel that `50` has root multiplicity one in
+  the native `F_101` CSR characteristic polynomial.
 
 Lean also proves that a zero executable Padé mismatch count denotes the full
 polynomial Bézout identity and, once the stored moments are identified with the
@@ -165,8 +169,10 @@ equalities compose to keep the final vector in the startup Krylov span, and a
 final residual check proves `1-50X` in the actual normalized reduced closed
 denominator. This conclusion no longer depends on running the `IO` executable.
 Separately, that executable still replays all binary certificates and reports
-success or failure; the remaining rank-certificate results are not yet closed
-into a concrete `WidthFiveCertificate` proof term. Lean also descends the
+success or failure. The bordered `Trel_plus` rank result is now closed from
+embedded bytes into a concrete native-field root-multiplicity theorem; the five
+normal rank certificates are not yet closed into the final
+`WidthFiveCertificate` proof term. Lean also descends the
 checked block multiplicities to the raw `F_101` CSR operators, assembles the
 full reflected block product (including both copies of `Trel`), proves that
 non-50 singleton blocks add no visible factor, and formalizes the adjugate
@@ -176,7 +182,7 @@ observable `50`-eigenvector annihilated by the reversed denominator recurrence
 forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
 denominator is now proved, via formal power series and adjugate cancellation,
 to supply the required eventual recurrence. What remains outside the final
-kernel theorem is closing the six rank-certificate checks from embedded bytes,
+kernel theorem is closing the remaining five rank-certificate checks from embedded bytes,
 the concrete reflection/SCC decomposition and `Wrel ~= Trel` identification,
 and the integer normalization that constructs the final
 `WidthFiveCertificate`. Thus the repository is not yet a single end-to-end

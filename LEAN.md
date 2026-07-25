@@ -206,6 +206,13 @@ There are two deliberately separate layers:
    composed in the kernel, and the final checkpoint's square-eigenvector and
    visible-coordinate check yield
    `embedded_visibleFactor_dvd_normalizedTransferDenominator`.
+   The checked-in `Trel_plus` bordered rank certificate is likewise embedded.
+   A deterministic `KRC101V1` file supplies 33 bounded Krylov checkpoints;
+   independently checked segment equalities compose into all 33,664 stored
+   moment matches. Together with the embedded Padé, CSR, diagonal, and
+   eigenvector checks, this proves
+   `embeddedTrelPlus_rootMultiplicity_fifty_eq_one` for the native `F_101`
+   characteristic polynomial, without running the `IO` executable.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -214,9 +221,10 @@ kernel-checked inhabitant of `WidthFiveCertificate`. Consequently, this project
 provides a Lean-implemented certificate verifier and a kernel-checked logical
 and algebraic core, but not yet a single end-to-end theorem for the complete
 counterexample. The closed visible-factor replay is now internal from embedded
-checked-in bytes through the normalized reduced denominator. What remains on
-the external side is closing the six rank-certificate results from embedded
-bytes, the concrete reflection/SCC decomposition and `Wrel ~= Trel`
+checked-in bytes through the normalized reduced denominator, as is the
+bordered `Trel_plus` rank-one result. What remains on the external side is
+closing the five normal rank-certificate results from embedded bytes, the
+concrete reflection/SCC decomposition and `Wrel ~= Trel`
 identification, and the integer normalization/final `WidthFiveCertificate`
 construction.
 

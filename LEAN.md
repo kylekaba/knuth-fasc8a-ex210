@@ -216,6 +216,9 @@ There are two deliberately separate layers:
    The normal `Trel_minus` certificate follows the same bounded-checkpoint
    construction and proves
    `embeddedTrelMinus_rootMultiplicity_fifty_eq_zero` over the native field.
+   The normal `U1_plus` certificate extends this construction to 51 bounded
+   checkpoint segments and proves
+   `embeddedU1Plus_rootMultiplicity_fifty_eq_zero` over the native field.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -225,8 +228,9 @@ provides a Lean-implemented certificate verifier and a kernel-checked logical
 and algebraic core, but not yet a single end-to-end theorem for the complete
 counterexample. The closed visible-factor replay is now internal from embedded
 checked-in bytes through the normalized reduced denominator, as is the
-bordered `Trel_plus` rank-one result and the normal `Trel_minus` rank-zero
-result. What remains on the external side is closing the four `U1`/`U2`
+bordered `Trel_plus` rank-one result and the normal `Trel_minus` and `U1_plus`
+rank-zero results. What remains on the external side is closing the three
+`U1`/`U2`
 rank-certificate results from embedded bytes, the
 concrete reflection/SCC decomposition and `Wrel ~= Trel`
 identification, and the integer normalization/final `WidthFiveCertificate`

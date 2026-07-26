@@ -13,4 +13,5 @@ import KnuthFasc8aEx210.VisibleCertificateSoundness
 import KnuthFasc8aEx210.EmbeddedVisibleCertificate
 import KnuthFasc8aEx210.EmbeddedTrelPlusRankCertificate
 import KnuthFasc8aEx210.EmbeddedTrelMinusRankCertificate
+import KnuthFasc8aEx210.EmbeddedU1PlusRankCertificate
 import KnuthFasc8aEx210.SHA256

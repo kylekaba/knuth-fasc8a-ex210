@@ -90,9 +90,17 @@ $(REGEN)/Trel_minus_shift50.krc1: $(BIN)/verify_rank_cert \
 	mkdir -p $(REGEN)
 	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_minus.kmc $(DATA)/certs/Trel_minus_shift50.kwc2 - $@
 
-rank-checkpoint-verify: $(REGEN)/Trel_plus_border.krc1 $(REGEN)/Trel_minus_shift50.krc1
+$(REGEN)/U1_plus_shift50.krc1: $(BIN)/verify_rank_cert \
+    $(DATA)/blocks/U1_plus.kmc $(DATA)/certs/U1_plus_shift50.kwc2 \
+    $(DATA)/certs/U1_plus_shift50.krc1
+	mkdir -p $(REGEN)
+	$(BIN)/verify_rank_cert $(DATA)/blocks/U1_plus.kmc $(DATA)/certs/U1_plus_shift50.kwc2 - $@
+
+rank-checkpoint-verify: $(REGEN)/Trel_plus_border.krc1 $(REGEN)/Trel_minus_shift50.krc1 \
+    $(REGEN)/U1_plus_shift50.krc1
 	cmp $(DATA)/certs/Trel_plus_border.krc1 $(REGEN)/Trel_plus_border.krc1
 	cmp $(DATA)/certs/Trel_minus_shift50.krc1 $(REGEN)/Trel_minus_shift50.krc1
+	cmp $(DATA)/certs/U1_plus_shift50.krc1 $(REGEN)/U1_plus_shift50.krc1
 
 verify: sanity visible-check rank-check
 
@@ -119,6 +127,7 @@ certs-regenerate: all
 	$(BIN)/wiedemann_ext $(DATA)/blocks/U2_minus.kmc normal 1 $(DATA)/certs/U2_minus_shift50.kwc2
 	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_plus.kmc $(DATA)/certs/Trel_plus_border.kwc2 $(DATA)/certs/Trel_plus_eigen50.vec $(DATA)/certs/Trel_plus_border.krc1
 	$(BIN)/verify_rank_cert $(DATA)/blocks/Trel_minus.kmc $(DATA)/certs/Trel_minus_shift50.kwc2 - $(DATA)/certs/Trel_minus_shift50.krc1
+	$(BIN)/verify_rank_cert $(DATA)/blocks/U1_plus.kmc $(DATA)/certs/U1_plus_shift50.kwc2 - $(DATA)/certs/U1_plus_shift50.krc1
 	$(MAKE) pade-witnesses
 
 pade-witnesses: $(BIN)/pade_witness

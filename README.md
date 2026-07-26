@@ -48,7 +48,9 @@ single factor, `1 - 50z`:
    multiplicity at least `3` in that determinant, contradicting the certified
    multiplicity `2`. Therefore `Q_5^+` is not a multiple of `Q_5^3`.
 
-The full argument is in [PROOF.md](PROOF.md).
+The full argument is in [PROOF.md](PROOF.md). The maintained
+[project wiki](wiki/index.md) provides a compact map of the proof architecture,
+certificate pipeline, trust boundary, current status, and review path.
 
 ## Requirements
 
@@ -132,6 +134,9 @@ In brief, the Lean executable:
 - embeds the normal `Trel_minus` certificate through the same checkpointed
   pipeline and proves that `50` has root multiplicity zero in its native
   `F_101` CSR characteristic polynomial.
+- embeds the normal `U1_plus` certificate, replays its 51 deterministic Krylov
+  checkpoint segments, and proves that `50` has root multiplicity zero in its
+  native `F_101` CSR characteristic polynomial.
 
 Lean also proves that a zero executable Padé mismatch count denotes the full
 polynomial Bézout identity and, once the stored moments are identified with the
@@ -174,8 +179,8 @@ denominator. This conclusion no longer depends on running the `IO` executable.
 Separately, that executable still replays all binary certificates and reports
 success or failure. The bordered `Trel_plus` rank result is now closed from
 embedded bytes into a concrete native-field root-multiplicity theorem. The
-normal `Trel_minus` result is also closed; the four `U1`/`U2` rank certificates
-are not yet closed into the final
+normal `Trel_minus` and `U1_plus` results are also closed; the remaining three
+`U1`/`U2` rank certificates are not yet closed into the final
 `WidthFiveCertificate` proof term. Lean also descends the
 checked block multiplicities to the raw `F_101` CSR operators, assembles the
 full reflected block product (including both copies of `Trel`), proves that
@@ -186,7 +191,8 @@ observable `50`-eigenvector annihilated by the reversed denominator recurrence
 forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
 denominator is now proved, via formal power series and adjugate cancellation,
 to supply the required eventual recurrence. What remains outside the final
-kernel theorem is closing the remaining four rank-certificate checks from embedded bytes,
+kernel theorem is closing the remaining three rank-certificate checks from
+embedded bytes,
 the concrete reflection/SCC decomposition and `Wrel ~= Trel` identification,
 and the integer normalization that constructs the final
 `WidthFiveCertificate`. Thus the repository is not yet a single end-to-end

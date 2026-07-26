@@ -129,6 +129,9 @@ In brief, the Lean executable:
   checkpoint file, replays all 33 Krylov segments, composes their exact moment
   equalities, and proves in the kernel that `50` has root multiplicity one in
   the native `F_101` CSR characteristic polynomial.
+- embeds the normal `Trel_minus` certificate through the same checkpointed
+  pipeline and proves that `50` has root multiplicity zero in its native
+  `F_101` CSR characteristic polynomial.
 
 Lean also proves that a zero executable Padé mismatch count denotes the full
 polynomial Bézout identity and, once the stored moments are identified with the
@@ -170,8 +173,9 @@ final residual check proves `1-50X` in the actual normalized reduced closed
 denominator. This conclusion no longer depends on running the `IO` executable.
 Separately, that executable still replays all binary certificates and reports
 success or failure. The bordered `Trel_plus` rank result is now closed from
-embedded bytes into a concrete native-field root-multiplicity theorem; the five
-normal rank certificates are not yet closed into the final
+embedded bytes into a concrete native-field root-multiplicity theorem. The
+normal `Trel_minus` result is also closed; the four `U1`/`U2` rank certificates
+are not yet closed into the final
 `WidthFiveCertificate` proof term. Lean also descends the
 checked block multiplicities to the raw `F_101` CSR operators, assembles the
 full reflected block product (including both copies of `Trel`), proves that
@@ -182,7 +186,7 @@ observable `50`-eigenvector annihilated by the reversed denominator recurrence
 forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
 denominator is now proved, via formal power series and adjugate cancellation,
 to supply the required eventual recurrence. What remains outside the final
-kernel theorem is closing the remaining five rank-certificate checks from embedded bytes,
+kernel theorem is closing the remaining four rank-certificate checks from embedded bytes,
 the concrete reflection/SCC decomposition and `Wrel ~= Trel` identification,
 and the integer normalization that constructs the final
 `WidthFiveCertificate`. Thus the repository is not yet a single end-to-end

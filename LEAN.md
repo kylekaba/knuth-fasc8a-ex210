@@ -213,6 +213,9 @@ There are two deliberately separate layers:
    eigenvector checks, this proves
    `embeddedTrelPlus_rootMultiplicity_fifty_eq_one` for the native `F_101`
    characteristic polynomial, without running the `IO` executable.
+   The normal `Trel_minus` certificate follows the same bounded-checkpoint
+   construction and proves
+   `embeddedTrelMinus_rootMultiplicity_fifty_eq_zero` over the native field.
 2. The `IO` executable parses and replays the checked-in computational
    certificates.
 
@@ -222,8 +225,9 @@ provides a Lean-implemented certificate verifier and a kernel-checked logical
 and algebraic core, but not yet a single end-to-end theorem for the complete
 counterexample. The closed visible-factor replay is now internal from embedded
 checked-in bytes through the normalized reduced denominator, as is the
-bordered `Trel_plus` rank-one result. What remains on the external side is
-closing the five normal rank-certificate results from embedded bytes, the
+bordered `Trel_plus` rank-one result and the normal `Trel_minus` rank-zero
+result. What remains on the external side is closing the four `U1`/`U2`
+rank-certificate results from embedded bytes, the
 concrete reflection/SCC decomposition and `Wrel ~= Trel`
 identification, and the integer normalization/final `WidthFiveCertificate`
 construction.

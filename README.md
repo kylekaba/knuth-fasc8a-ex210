@@ -48,7 +48,9 @@ single factor, `1 - 50z`:
    multiplicity at least `3` in that determinant, contradicting the certified
    multiplicity `2`. Therefore `Q_5^+` is not a multiple of `Q_5^3`.
 
-The full argument is in [PROOF.md](PROOF.md).
+The full argument is in [PROOF.md](PROOF.md). The maintained
+[project wiki](wiki/index.md) provides a compact map of the proof architecture,
+certificate pipeline, trust boundary, current status, and review path.
 
 ## Requirements
 
@@ -111,14 +113,36 @@ In brief, the Lean executable:
   restricted `Trel_plus` eigenvector;
 - recomputes all `2N + 32` Wiedemann/Krylov moments from the actual sparse
   matrices for all six rank certificates when run in full mode;
+- checks compact Padé/Bézout witnesses for all six rank certificates on every
+  run, proving the stored moment sequence has no shorter scalar recurrence;
 - reruns Berlekamp--Massey over the first `2N` stored moments and checks that
   the resulting full-degree connection polynomials match the stored
   coefficients;
 - builds the formal Lean theorem
   `KnuthFasc8aEx210.WidthFiveCertificate.not_cubic_divisibility`, which proves
-  that the certified multiplicity facts contradict `Q_5(z)^3 | Q_5^+(z)`.
+  over actual polynomial rings that the certified multiplicity facts contradict
+  `Q_5(z)^3 | Q_5^+(z)` in `Q[z]`. The proof uses Mathlib's Gauss lemma to pass
+  through `Z[z]` and then reduces coefficients into `(ZMod 101)[z]`;
+- formalizes the bordered-matrix lemma used to establish algebraic simplicity:
+  bordered injectivity implies `ker(H) = span(v)` and `v` is not in the range
+  of `H`; using Mathlib's generalized-eigenspace theorem, Lean then proves the
+  eigenvalue has characteristic-polynomial root multiplicity exactly one.
+- embeds the `Trel_plus` bordered rank certificate and a deterministic
+  checkpoint file, replays all 33 Krylov segments, composes their exact moment
+  equalities, and proves in the kernel that `50` has root multiplicity one in
+  the native `F_101` CSR characteristic polynomial.
+- embeds the normal `Trel_minus` certificate through the same checkpointed
+  pipeline and proves that `50` has root multiplicity zero in its native
+  `F_101` CSR characteristic polynomial.
+- embeds the normal `U1_plus` certificate, replays its 51 deterministic Krylov
+  checkpoint segments, and proves that `50` has root multiplicity zero in its
+  native `F_101` CSR characteristic polynomial.
 
-Quick Lean check:
+Lean also proves that a zero executable Padé mismatch count denotes the full
+polynomial Bézout identity and, once the stored moments are identified with the
+matrix's scalar Krylov moments, implies injectivity of the represented operator.
+
+Type-check the Lean proof and run the quick certificate smoke check:
 
 ```sh
 lake build
@@ -126,14 +150,54 @@ lake build knuth_cert_check
 .lake/build/bin/knuth_cert_check
 ```
 
+On a clean build, `lake build` also proves the embedded closed visible-factor
+certificate.  The 4,107-step sparse Horner replay is split into four independent
+checkpoint segments so Lake can check them concurrently; this expensive work is
+cached in the resulting `.olean` files.
+
+The default executable run checks only a short prefix and labels itself
+`SMOKE`; it is not the full certificate replay.
+
 Full Lean certificate-file verification:
 
 ```sh
-.lake/build/bin/knuth_cert_check . all all bm
+.lake/build/bin/knuth_cert_check --full
 ```
 
 The full Lean verifier is intentionally slower than the C++ checker because it
 recomputes the large sparse Krylov streams in Lean.
+
+The formal theorem and executable checker have an explicit trust boundary.
+Lean's kernel checks the polynomial argument over `Q[z]`, Gauss's lemma over
+`Z[z]`, reduction modulo 101, factor multiplicity, and the bordered-matrix
+kernel/range lemma. The closed matrix, finish vector, polynomial, and bounded
+Horner checkpoints are now embedded as closed Lean constants. Four
+proof-shaped segment counters replay every Horner step, their mathematical
+equalities compose to keep the final vector in the startup Krylov span, and a
+final residual check proves `1-50X` in the actual normalized reduced closed
+denominator. This conclusion no longer depends on running the `IO` executable.
+Separately, that executable still replays all binary certificates and reports
+success or failure. The bordered `Trel_plus` rank result is now closed from
+embedded bytes into a concrete native-field root-multiplicity theorem. The
+normal `Trel_minus` and `U1_plus` results are also closed; the remaining three
+`U1`/`U2` rank certificates are not yet closed into the final
+`WidthFiveCertificate` proof term. Lean also descends the
+checked block multiplicities to the raw `F_101` CSR operators, assembles the
+full reflected block product (including both copies of `Trel`), proves that
+non-50 singleton blocks add no visible factor, and formalizes the adjugate
+argument that a normalized scalar transfer denominator divides
+`det(I-XM)`. It also proves the closed-side visibility implication: an
+observable `50`-eigenvector annihilated by the reversed denominator recurrence
+forces `1-50X` to divide that denominator. The canonical reduced `RatFunc`
+denominator is now proved, via formal power series and adjugate cancellation,
+to supply the required eventual recurrence. What remains outside the final
+kernel theorem is closing the remaining three rank-certificate checks from
+embedded bytes,
+the concrete reflection/SCC decomposition and `Wrel ~= Trel` identification,
+and the integer normalization that constructs the final
+`WidthFiveCertificate`. Thus the repository is not yet a single end-to-end
+kernel proof of the complete counterexample, but the closed visible side is now
+concrete from checked-in bytes through the reduced denominator.
 
 Expected full-graph SHA-256 values (also checked by `make regen-check`):
 
@@ -184,6 +248,7 @@ make certs-regenerate    # overwrites data/certs/*, then compare with sha256sum 
 | `src/closed_factor.cpp` | Constructs the visible `50`-eigenvector |
 | `src/verify_visible.cpp` | Deterministic check that `1 - 50z` is visible in the closed scalar denominator |
 | `src/wiedemann_ext.cpp` | Exact certificate generator over `F_(101^2)` |
+| `src/pade_witness.cpp` | Generates compact Padé/Bézout minimality witnesses |
 | `src/verify_rank_cert.cpp` | Independent exact certificate verifier |
 | `LEAN.md`, `KnuthFasc8aEx210/` | Lean 4 theorem and certificate-file verifier |
 | `lakefile.lean`, `lean-toolchain` | Pinned Lean/Lake project configuration |
@@ -197,6 +262,7 @@ All integer fields are little-endian.
 - `KMV101` — eigenvector and nonzero pivot.
 - `KMP101` — polynomial used for the visible factor.
 - `KMW2CERT` — rank certificate header, Krylov moments, and BM connection polynomial.
+- `KPB101W1` — Padé/Bézout witness bound to a `KMW2CERT` source hash.
 
 `SHA256SUMS` covers every source, matrix, and certificate in the release.
 

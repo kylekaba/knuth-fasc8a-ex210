@@ -10,6 +10,8 @@ structure RankExpectation where
   matrixSha256 : String
   cert : FilePath
   certSha256 : String
+  pade : FilePath
+  padeSha256 : String
   eig : Option FilePath
   eigSha256 : Option String
   order : Nat
@@ -24,6 +26,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "55c89f1883f95c0a9cce964bd2193dbc1220badf216a75e198f50b24da9844cb",
     cert := root / "data/certs/Trel_plus_border.kwc2",
     certSha256 := "f9f7c2a40d13b3dff6c0a35ae5c0a3123b30b7d7e89ccedc52e73461920dd97a",
+    pade := root / "data/certs/Trel_plus_border.kpw1",
+    padeSha256 := "0b6442316ab366f161fe492cbbf665db21b5bb85085bef2f8de1cf8f62cf0018",
     eig := some (root / "data/certs/Trel_plus_eigen50.vec"),
     eigSha256 := some "d38a64b7ef34ccfd4c714ac10970f996bc0ee7d5a76a6ef48f56da6920bb9ce9",
     order := 16832, degree := 16832,
@@ -34,6 +38,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "9a4b56c30ba48b25ba64034889d6ce10b2581ac18523870d7fa850fb294c107f",
     cert := root / "data/certs/Trel_minus_shift50.kwc2",
     certSha256 := "eec4d64aedb6aa679d0ff53fd64a02fce3e6764126cdcaecb2d34d771c697f38",
+    pade := root / "data/certs/Trel_minus_shift50.kpw1",
+    padeSha256 := "5efc5b45f47074ac0a3d2162d4cd079fc90ff3073696c2592cd6839dc7b3143e",
     eig := none,
     eigSha256 := none,
     order := 16578, degree := 16578,
@@ -44,6 +50,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "5c21c664c261519e967635a02f10cb79cf945790f3b6828a20d346e55d6e3ce3",
     cert := root / "data/certs/U1_plus_shift50.kwc2",
     certSha256 := "eed6892a2fce9d5c3b229b5d3c6a418fa32a72125a7fbd7d6f6813d88bd6b992",
+    pade := root / "data/certs/U1_plus_shift50.kpw1",
+    padeSha256 := "804204462c1bb0832c51760643dcbf3016953d7ebbadc9f42069158229177bae",
     eig := none,
     eigSha256 := none,
     order := 25617, degree := 25617,
@@ -54,6 +62,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "8412832c21ec5be2b242882b3ef2d8d688c503d42a345efdf88c5d02de7dde53",
     cert := root / "data/certs/U1_minus_shift50.kwc2",
     certSha256 := "c05347fe795621b5b17b92bb44f29828747dfcec9e620ccabcb45d7c64b65ed6",
+    pade := root / "data/certs/U1_minus_shift50.kpw1",
+    padeSha256 := "39486d05448b17b28fc5fbb19f6d921948fc080ea768e68ef047a0a751af459b",
     eig := none,
     eigSha256 := none,
     order := 25495, degree := 25495,
@@ -64,6 +74,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "0cf983f4721d5704fcfbde68571d600272fa03ff283355858d5735ea04b9ef88",
     cert := root / "data/certs/U2_plus_shift50.kwc2",
     certSha256 := "fed9c7c7ab70e7593d49a69ade95739d334bb23610c050e22e66751083053100",
+    pade := root / "data/certs/U2_plus_shift50.kpw1",
+    padeSha256 := "f7f9e241bbbb9bce6df8cd06dec9d1aed0a84f9895f52cb1141c550a9628dcfb",
     eig := none,
     eigSha256 := none,
     order := 23646, degree := 23646,
@@ -74,6 +86,8 @@ def rankExpectations (root : FilePath) : List RankExpectation := [
     matrixSha256 := "a2258bc6ad37442592c1d8a037aa4ba807b38d7c5dbde64a2307d86b2ff98faa",
     cert := root / "data/certs/U2_minus_shift50.kwc2",
     certSha256 := "0a9ecde164fd7a9fdc99e48576696d752bec017282e5a2ec7c29cd75ac917d7f",
+    pade := root / "data/certs/U2_minus_shift50.kpw1",
+    padeSha256 := "1af8dbaaf3191a3a5aa41995cf3e4e7ecfbfa33225c70512fd6c56661014173d",
     eig := none,
     eigSha256 := none,
     order := 23552, degree := 23552,
@@ -95,40 +109,56 @@ def verifySha256 (path : FilePath) (expected : String) (bytes : ByteArray) :
     throw <| IO.userError
       s!"SHA-256 mismatch for {path}: expected {expected}, got {actual}"
 
-def parseStepArg (default : Nat) (s : String) : Nat :=
+def parseStepArg? (s : String) : Option Nat :=
   if s == "all" || s == "full" then
-    1000000000
+    some 1000000000
   else
-    s.toNat?.getD default
+    s.toNat?
 
-def parseBMReplayFlag (s : String) : Bool :=
-  s == "bm" || s == "stored-bm" || s == "all"
+structure CheckOptions where
+  root : FilePath := "."
+  krylovPrefixMoments : Nat := 2
+  visiblePrefixSteps : Nat := 2
+  replayBM : Bool := false
+  rankLimit : Option Nat := none
+  full : Bool := false
 
-def checkKrylovMomentsWithProgress (label : String)
-    (cert : RankCertificateFile) (matrixBytes : ByteArray)
-    (header : MatrixHeader) (eig? : Option EigenvectorFile)
-    (count : Nat) : IO Nat := do
-  let expectedOrder := header.n + if eig?.isSome then 1 else 0
-  if cert.n != expectedOrder then
-    throw <| IO.userError "certificate order does not match operator dimension"
-  let seedData := rankSeedByteData cert.n cert.seed
-  let mut x := seedData.x
-  let mut bad := 0
-  let limit := Nat.min count cert.terms
-  let progressStride := 5000
-  let showProgress := progressStride <= limit
-  for k in [0:limit] do
-    let actual := extDotBytes seedData.u x cert.n
-    let expected := pairAt cert.moments k
-    if actual != expected then
-      bad := bad + 1
-    if k + 1 < limit then
-      x ← exceptToIO s!"Krylov step {label}"
-        (krylovStepBytes matrixBytes header eig? seedData.dR seedData.dL x cert.n)
-    let done := k + 1
-    if showProgress && (done % progressStride == 0 || done == limit) then
-      IO.eprintln s!"krylov {label}: checked {done}/{limit} moments, bad={bad}"
-  pure bad
+def checkUsage : String :=
+  "Usage: knuth_cert_check [OPTIONS]\n" ++
+  "\n" ++
+  "Options:\n" ++
+  "  --full              Replay every certificate completely\n" ++
+  "  --root PATH         Repository root (default: .)\n" ++
+  "  --krylov N|all      Krylov moments per rank certificate (default: 2)\n" ++
+  "  --visible N|all     Visible-polynomial Horner steps (default: 2)\n" ++
+  "  --bm                Replay Berlekamp--Massey\n" ++
+  "  --rank-limit N      Check only the first N rank certificates\n" ++
+  "  -h, --help          Show this help"
+
+def parseCheckOptions (args : List String) : Except String CheckOptions :=
+  let rec go (options : CheckOptions) : List String -> Except String CheckOptions
+    | [] => pure options
+    | "--full" :: rest => go { options with full := true } rest
+    | "--bm" :: rest => go { options with replayBM := true } rest
+    | "--root" :: value :: rest => go { options with root := value } rest
+    | "--krylov" :: value :: rest =>
+        match parseStepArg? value with
+        | some n => go { options with krylovPrefixMoments := n } rest
+        | none => throw s!"invalid --krylov value: {value}"
+    | "--visible" :: value :: rest =>
+        match parseStepArg? value with
+        | some n => go { options with visiblePrefixSteps := n } rest
+        | none => throw s!"invalid --visible value: {value}"
+    | "--rank-limit" :: value :: rest =>
+        match value.toNat? with
+        | some n => go { options with rankLimit := some n } rest
+        | none => throw s!"invalid --rank-limit value: {value}"
+    | ["--root"] => throw "missing value for --root"
+    | ["--krylov"] => throw "missing value for --krylov"
+    | ["--visible"] => throw "missing value for --visible"
+    | ["--rank-limit"] => throw "missing value for --rank-limit"
+    | option :: _ => throw s!"unknown option: {option}"
+  go {} args
 
 def checkVisibleFiles (root : FilePath) (visiblePrefixSteps : Nat) : IO Unit := do
   let tallBytes ← readBin (root / "data/blocks/Tall_plus.kmc")
@@ -199,15 +229,35 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   verifySha256 e.matrix e.matrixSha256 matrixBytes
   let matrix ← exceptToIO s!"matrix {e.matrix}" (parseMatrixHeader matrixBytes)
   let matrixValidation ← exceptToIO s!"matrix CSR {e.matrix}" (validateMatrixCSR matrixBytes matrix)
+  let csrColumnBad := matrixCSRColumnBad matrixBytes matrix
+  if csrColumnBad != 0 then
+    throw <| IO.userError
+      s!"proof-shaped CSR column check failed for {e.matrix}: {csrColumnBad} bad entries"
+  let csrRowPointerBad := matrixCSRRowPointerBad matrixBytes matrix
+  if csrRowPointerBad != 0 then
+    throw <| IO.userError
+      s!"proof-shaped CSR row-pointer check failed for {e.matrix}: {csrRowPointerBad} bad rows"
   if matrix.prime != 101 then
     throw <| IO.userError s!"matrix {e.matrix} has prime {matrix.prime}, expected 101"
   let certBytes ← readBin e.cert
   verifySha256 e.cert e.certSha256 certBytes
   let cert ← exceptToIO s!"certificate {e.cert}" (parseRankCertificate certBytes)
+  let padeBytes ← readBin e.pade
+  verifySha256 e.pade e.padeSha256 padeBytes
+  let pade ← exceptToIO s!"Padé witness {e.pade}" (parsePadeWitness padeBytes)
+  if pade.degree != cert.degree then
+    throw <| IO.userError
+      s!"Padé witness degree mismatch for {e.pade}: got {pade.degree}, expected {cert.degree}"
+  if pade.certificateHash != fnv64Bytes certBytes then
+    throw <| IO.userError s!"source certificate hash mismatch for {e.pade}"
   let c0 := cert.connectionLeadingCoefficient
   if c0.a != 1 || c0.b != 0 then
     throw <| IO.userError
       s!"connection polynomial for {e.cert} does not start with 1: {c0.a.toNat}+{c0.b.toNat}t"
+  let cN := cert.connectionConstantCoefficient
+  if cN.isZero then
+    throw <| IO.userError
+      s!"connection polynomial for {e.cert} has zero constant coefficient"
   let initialRecurrenceBad := cert.initialRecurrenceBad
   if initialRecurrenceBad != 0 then
     throw <| IO.userError
@@ -216,8 +266,16 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
   if recurrenceBad != 0 then
     throw <| IO.userError
       s!"extra recurrence check failed for {e.cert}: {recurrenceBad} bad moments"
+  let fullRecurrenceBad := cert.fullRecurrenceBad
+  if fullRecurrenceBad != 0 then
+    throw <| IO.userError
+      s!"full recurrence check failed for {e.cert}: {fullRecurrenceBad} bad moments"
+  let padeBezoutBad := pade.bezoutBad cert
+  if padeBezoutBad != 0 then
+    throw <| IO.userError
+      s!"Padé Bézout identity failed for {e.pade}: {padeBezoutBad} bad coefficients"
   if cert.n != e.order || cert.degree != e.degree ||
-      cert.constantA != e.constantA || cert.constantB != e.constantB ||
+      cN.a != e.constantA || cN.b != e.constantB ||
       cert.border != e.border then
     throw <| IO.userError
       s!"unexpected certificate metadata for {e.cert}: n={cert.n}, degree={cert.degree}, constant={cert.constantA.toNat}+{cert.constantB.toNat}t, border={cert.border}"
@@ -241,16 +299,42 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
         throw <| IO.userError s!"eigenvector metadata mismatch for {e.cert}: {eig.summary}"
       if cert.eigenHash != fnv64Bytes eigBytes then
         throw <| IO.userError s!"eigenvector hash mismatch for {e.cert}"
-      let residualBad ← exceptToIO s!"eigenvector residual {eigPath}"
-        (eigenResidualBadRows matrixBytes matrix eig)
+      let eigenCanonicalBad := encodedVectorCanonicalBad
+        (eigenPairBytes eig eig.n) eig.n
+      if eigenCanonicalBad != 0 then
+        throw <| IO.userError
+          s!"eigenvector canonicality check failed for {e.cert}: {eigenCanonicalBad} bad entries"
+      let residualBad := eigenResidualMismatchCount matrixBytes matrix eig
       if residualBad != 0 then
         throw <| IO.userError
           s!"eigenvector residual check failed for {e.cert}: {residualBad} bad rows"
       pure (some eig, some residualBad)
   let krylovRequested := Nat.min krylovPrefixMoments cert.terms
-  let krylovPrefixBad ←
-    checkKrylovMomentsWithProgress (toString e.cert) cert matrixBytes matrix
-      eigForKrylov? krylovPrefixMoments
+  let seedByteData := rankSeedByteData cert.n cert.seed
+  let seedSizeBad := seedByteData.sizeBad cert.n
+  if seedSizeBad != 0 then
+    throw <| IO.userError
+      s!"seed byte-vector size check failed for {e.cert}: {seedSizeBad} bad vectors"
+  let seedDRCanonicalBad := encodedVectorCanonicalBad seedByteData.dR cert.n
+  if seedDRCanonicalBad != 0 then
+    throw <| IO.userError
+      s!"right seed diagonal canonicality check failed for {e.cert}: {seedDRCanonicalBad} bad entries"
+  let seedDRZeroBad := encodedVectorZeroBad seedByteData.dR cert.n
+  if seedDRZeroBad != 0 then
+    throw <| IO.userError
+      s!"right seed diagonal nonzero check failed for {e.cert}: {seedDRZeroBad} zero entries"
+  let expectedOrder := matrix.n + if eigForKrylov?.isSome then 1 else 0
+  if cert.n != expectedOrder then
+    throw <| IO.userError "certificate order does not match operator dimension"
+  let krylovPrefixBad ← match eigForKrylov? with
+    | none =>
+        pure <| cert.normalKrylovMismatchCount matrixBytes matrix
+          seedByteData.dR seedByteData.dL seedByteData.u seedByteData.x
+          krylovRequested
+    | some eig =>
+        pure <| cert.borderKrylovMismatchCount matrixBytes matrix eig
+          seedByteData.dR seedByteData.dL seedByteData.u seedByteData.x
+          krylovRequested
   if krylovPrefixBad != 0 then
     throw <| IO.userError
       s!"Krylov moment check failed for {e.cert}: {krylovPrefixBad} bad moments"
@@ -276,34 +360,44 @@ def checkRankFile (e : RankExpectation) (krylovPrefixMoments : Nat)
     match eigenResidualBad? with
     | none => "n/a"
     | some n => toString n
-  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cert.constantA.toNat}+{cert.constantB.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, eigen_residual_bad={residualText}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
+  IO.println s!"PASS Lean rank cert content: {e.cert}, n={cert.n}, constant={cN.a.toNat}+{cN.b.toNat}t, {krylovText}{bmText}, initial_recurrence_bad={initialRecurrenceBad}, extra_recurrence_bad={recurrenceBad}, full_recurrence_bad={fullRecurrenceBad}, pade_bezout_bad={padeBezoutBad}, eigen_residual_bad={residualText}, csr_column_bad={csrColumnBad}, csr_row_pointer_bad={csrRowPointerBad}, seed_size_bad={seedSizeBad}, seed_dR_canonical_bad={seedDRCanonicalBad}, seed_dR_zero_bad={seedDRZeroBad}, seed_diag_rejections={seedSummary.diagonalRejections}, matrix_n={matrixValidation.rows}, entries={matrixValidation.entries}, sha256=ok"
 
 def run (args : List String) : IO UInt32 := do
-  let root : FilePath :=
-    match args with
-    | [] => "."
-    | x :: _ => x
+  if args.contains "--help" || args.contains "-h" then
+    IO.println checkUsage
+    return 0
+  let options ←
+    match parseCheckOptions args with
+    | .ok options => pure options
+    | .error message =>
+        IO.eprintln s!"FAIL: {message}\n\n{checkUsage}"
+        return 2
+  let root := options.root
   let krylovPrefixMoments : Nat :=
-    match args with
-    | _ :: k :: _ => parseStepArg 2 k
-    | _ => 2
+    if options.full then 1000000000 else options.krylovPrefixMoments
   let visiblePrefixSteps : Nat :=
-    match args with
-    | _ :: _ :: k :: _ => parseStepArg 2 k
-    | _ => 2
+    if options.full then 1000000000 else options.visiblePrefixSteps
   let replayBM : Bool :=
-    match args with
-    | _ :: _ :: _ :: mode :: _ => parseBMReplayFlag mode
-    | _ => false
+    options.full || options.replayBM
+  let expectations := rankExpectations root
   let rankLimit : Nat :=
-    match args with
-    | _ :: _ :: _ :: _ :: limit :: _ => limit.toNat?.getD (rankExpectations root).length
-    | _ => (rankExpectations root).length
+    if options.full then expectations.length
+    else options.rankLimit.getD expectations.length
+  let fullReplay :=
+    replayBM && 4107 <= visiblePrefixSteps && expectations.length <= rankLimit &&
+      expectations.all (fun e => 2 * e.order + 32 <= krylovPrefixMoments)
   try
+    if fullReplay then
+      IO.println "Running FULL Lean certificate replay."
+    else
+      IO.println "Running SMOKE Lean certificate check (not a full replay; use --full)."
     checkVisibleFiles root visiblePrefixSteps
-    for e in (rankExpectations root).take rankLimit do
+    for e in expectations.take rankLimit do
       checkRankFile e krylovPrefixMoments replayBM
-    IO.println "Lean certificate-file checks completed."
+    if fullReplay then
+      IO.println "FULL Lean certificate replay completed."
+    else
+      IO.println "SMOKE Lean certificate check completed; full replay was not performed."
     pure 0
   catch err =>
     IO.eprintln s!"FAIL: {err}"

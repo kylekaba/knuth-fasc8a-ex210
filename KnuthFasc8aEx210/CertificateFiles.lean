@@ -9,6 +9,8 @@ These definitions parse the binary formats used by
 * `KMC201` sparse matrices modulo 101;
 * `KMV101` eigenvectors;
 * `KMP101` visible-factor polynomials;
+* `KMH101` visible-factor Horner checkpoints;
+* `KRC101V1` bounded rank-certificate Krylov checkpoints;
 * `KMW2CERT` Wiedemann/Berlekamp--Massey rank certificates.
 
 The parsers are intentionally small and fail closed on malformed or trailing
@@ -85,6 +87,15 @@ def p101 : Nat := 101
 
 def u8Mod101 (n : Nat) : UInt8 :=
   UInt8.ofNat (n % p101)
+
+/-- Every byte is a canonical representative of an element of `ZMod 101`. -/
+def byteArrayIsCanonicalMod101 (bytes : ByteArray) : Bool :=
+  Id.run do
+    let mut canonical := true
+    for b in bytes do
+      if 101 <= b.toNat then
+        canonical := false
+    pure canonical
 
 def readMagicPrefix (c : Cursor) (expected : String) : ParseM Cursor := do
   let (m, c) ← c.readBytes 8 "magic"
@@ -202,6 +213,40 @@ def matrixStateLabelOffset (header : MatrixHeader) : Nat :=
 def matrixStateLabelAt (bytes : ByteArray) (header : MatrixHeader) (row : Nat) : Nat :=
   u64LEAtNat bytes (matrixStateLabelOffset header + 8 * row)
 
+private unsafe def matrixCSRColumnBadFast
+    (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for entry in [0:header.entries] do
+      if header.n ≤ matrixColumnAt bytes header entry then
+        bad := bad + 1
+    pure bad
+
+/-- Number of CSR entries whose column index lies outside the matrix. -/
+@[implemented_by matrixCSRColumnBadFast]
+def matrixCSRColumnBad (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  ((List.range header.entries).filter fun entry =>
+    decide (header.n ≤ matrixColumnAt bytes header entry)).length
+
+private unsafe def matrixCSRRowPointerBadFast
+    (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for row in [0:header.n] do
+      let start := matrixRowStart bytes header row
+      let stop := matrixRowStop bytes header row
+      if stop < start || header.entries < stop then
+        bad := bad + 1
+    pure bad
+
+/-- Number of CSR rows whose interval is decreasing or exceeds the advertised
+entry array. -/
+@[implemented_by matrixCSRRowPointerBadFast]
+def matrixCSRRowPointerBad (bytes : ByteArray) (header : MatrixHeader) : Nat :=
+  ((List.range header.n).filter fun row =>
+    decide (matrixRowStop bytes header row < matrixRowStart bytes header row ∨
+      header.entries < matrixRowStop bytes header row)).length
+
 structure EigenvectorFile where
   n : Nat
   pivot : Nat
@@ -270,6 +315,94 @@ def parsePolynomial (bytes : ByteArray) : ParseM PolynomialFile := do
       s!"polynomial coefficient is not reduced modulo 101 at index {i}"
   require (coefficients[length - 1]!.toNat != 0) "zero leading polynomial coefficient"
   pure { length, degree := length - 1, coefficients }
+
+/-- Bounded checkpoints for the visible polynomial's Horner evaluation. -/
+structure HornerCheckpointFile where
+  n : Nat
+  steps : Nat
+  chunk : Nat
+  count : Nat
+  values : ByteArray
+
+def parseHornerCheckpoints (bytes : ByteArray) : ParseM HornerCheckpointFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicPrefix c "KMH101"
+  let (n, c1) ← c.readU32LE "Horner checkpoint dimension"
+  c := c1
+  let (steps, c1) ← c.readU32LE "Horner step count"
+  c := c1
+  let (chunk, c1) ← c.readU32LE "Horner chunk size"
+  c := c1
+  let (count, c1) ← c.readU32LE "Horner checkpoint count"
+  c := c1
+  require (0 < n) "zero Horner checkpoint dimension"
+  require (0 < chunk) "zero Horner checkpoint chunk size"
+  require (count == (steps + chunk - 1) / chunk + 1)
+    "Horner checkpoint count does not match step and chunk counts"
+  let (values, c1) ← c.readBytes (count * n) "Horner checkpoint vectors"
+  c := c1
+  requireNoTrailing c
+  for i in [0 : values.size] do
+    require (values[i]!.toNat < 101)
+      s!"Horner checkpoint entry is not reduced modulo 101 at index {i}"
+  pure { n, steps, chunk, count, values }
+
+def hornerCheckpointValueAt (checkpoints : HornerCheckpointFile)
+    (checkpoint coordinate : Nat) : Nat :=
+  checkpoints.values[checkpoint * checkpoints.n + coordinate]!.toNat
+
+/-- Bounded checkpoints for a rank certificate's preconditioned Krylov
+orbit.  Coordinates are interleaved pairs in the certificate extension
+field. -/
+structure RankCheckpointFile where
+  version : Nat
+  order : Nat
+  steps : Nat
+  chunk : Nat
+  count : Nat
+  seed : UInt64
+  matrixHash : UInt64
+  eigenHash : UInt64
+  values : ByteArray
+
+def parseRankCheckpoints (bytes : ByteArray) : ParseM RankCheckpointFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicExact c "KRC101V1"
+  let (version, c1) ← c.readU32LE "rank checkpoint version"
+  c := c1
+  let (order, c1) ← c.readU32LE "rank checkpoint order"
+  c := c1
+  let (steps, c1) ← c.readU32LE "rank checkpoint step count"
+  c := c1
+  let (chunk, c1) ← c.readU32LE "rank checkpoint chunk size"
+  c := c1
+  let (count, c1) ← c.readU32LE "rank checkpoint count"
+  c := c1
+  let (seed, c1) ← c.readU64LE "rank checkpoint seed"
+  c := c1
+  let (matrixHash, c1) ← c.readU64LE "rank checkpoint matrix hash"
+  c := c1
+  let (eigenHash, c1) ← c.readU64LE "rank checkpoint eigenvector hash"
+  c := c1
+  require (version == 1) "unsupported rank checkpoint version"
+  require (0 < order) "zero rank checkpoint order"
+  require (0 < chunk) "zero rank checkpoint chunk size"
+  require (count == (steps + chunk - 1) / chunk + 1)
+    "rank checkpoint count does not match step and chunk counts"
+  let (values, c1) ← c.readBytes (count * 2 * order)
+    "rank checkpoint vectors"
+  c := c1
+  requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 values)
+    "rank checkpoint coordinate is not reduced modulo 101"
+  pure {
+    version, order, steps, chunk, count, seed, matrixHash, eigenHash, values
+  }
+
+def rankCheckpointVector (checkpoints : RankCheckpointFile)
+    (checkpoint : Nat) : ByteArray :=
+  checkpoints.values.extract (checkpoint * 2 * checkpoints.order)
+    ((checkpoint + 1) * 2 * checkpoints.order)
 
 structure FinishVectorFile where
   n : Nat
@@ -470,6 +603,10 @@ def parseRankCertificate (bytes : ByteArray) : ParseM RankCertificateFile := do
   let (coefficients, c1) ← c.readBytes coefficientBytes "stored BM coefficients"
   c := c1
   requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 moments)
+    "stored moment byte is not reduced modulo 101"
+  require (byteArrayIsCanonicalMod101 coefficients)
+    "stored connection-polynomial byte is not reduced modulo 101"
   let constantA := coefficients[coefficientBytes - 2]!
   let constantB := coefficients[coefficientBytes - 1]!
   require (constantA != 0 || constantB != 0) "zero constant coefficient"
@@ -498,6 +635,10 @@ def u8SubMod101 (x y : UInt8) : UInt8 :=
     UInt8.ofNat (x.toNat - y.toNat)
   else
     UInt8.ofNat (x.toNat + 101 - y.toNat)
+
+def ExtElt.sub (x y : ExtElt) : ExtElt where
+  a := u8SubMod101 x.a y.a
+  b := u8SubMod101 x.b y.b
 
 def ExtElt.scale (c : Nat) (x : ExtElt) : ExtElt where
   a := u8Mod101 (c * x.a.toNat)
@@ -533,6 +674,158 @@ def pairAt (bytes : ByteArray) (i : Nat) : ExtElt where
   a := bytes[2 * i]!
   b := bytes[2 * i + 1]!
 
+structure PadeWitnessFile where
+  version : Nat
+  prime : Nat
+  nonresidue : Nat
+  degree : Nat
+  uLength : Nat
+  vLength : Nat
+  certificateHash : UInt64
+  uCoefficients : ByteArray
+  vCoefficients : ByteArray
+
+def parsePadeWitness (bytes : ByteArray) : ParseM PadeWitnessFile := do
+  let mut c : Cursor := { bytes, offset := 0 }
+  c ← readMagicExact c "KPB101W1"
+  let (version, c1) ← c.readU32LE "Padé witness version"
+  c := c1
+  let (prime, c1) ← c.readU32LE "Padé witness prime"
+  c := c1
+  let (nonresidue, c1) ← c.readU32LE "Padé witness nonresidue"
+  c := c1
+  let (degree, c1) ← c.readU32LE "Padé witness degree"
+  c := c1
+  let (uLength, c1) ← c.readU32LE "Padé U length"
+  c := c1
+  let (vLength, c1) ← c.readU32LE "Padé V length"
+  c := c1
+  let (certificateHash, c1) ← c.readU64LE "Padé source-certificate hash"
+  c := c1
+  require (version == 1) "unsupported Padé witness version"
+  require (prime == 101) "Padé witness prime is not 101"
+  require (nonresidue == 2) "Padé witness nonresidue is not 2"
+  require (1 < degree) "Padé witness degree is too small"
+  require (uLength <= degree) "Padé U polynomial is too long"
+  require (vLength <= degree) "Padé V polynomial is too long"
+  let (uCoefficients, c1) ← c.readBytes (2 * uLength) "Padé U coefficients"
+  c := c1
+  let (vCoefficients, c1) ← c.readBytes (2 * vLength) "Padé V coefficients"
+  c := c1
+  requireNoTrailing c
+  require (byteArrayIsCanonicalMod101 uCoefficients)
+    "Padé U coefficient is not reduced modulo 101"
+  require (byteArrayIsCanonicalMod101 vCoefficients)
+    "Padé V coefficient is not reduced modulo 101"
+  pure {
+    version, prime, nonresidue, degree, uLength, vLength, certificateHash,
+    uCoefficients, vCoefficients
+  }
+
+/-- One coefficient of a convolution in `F_101[t]/(t^2-2)`. -/
+def extConvolutionSums
+    (left : Nat → ExtElt) (right : Nat → ExtElt) (rightLength k : Nat) :
+    Nat → Nat × Nat
+  | 0 => (0, 0)
+  | i + 1 =>
+      let totals := extConvolutionSums left right rightLength k i
+      if i ≤ k ∧ k - i < rightLength then
+        (totals.1 + (left i).a.toNat * (right (k - i)).a.toNat +
+            2 * (left i).b.toNat * (right (k - i)).b.toNat,
+          totals.2 + (left i).a.toNat * (right (k - i)).b.toNat +
+            (left i).b.toNat * (right (k - i)).a.toNat)
+      else totals
+
+private unsafe def extConvolutionCoefficientFast
+    (left : Nat → ExtElt) (leftLength : Nat)
+    (right : Nat → ExtElt) (rightLength k : Nat) : ExtElt :=
+  Id.run do
+    let mut real : Nat := 0
+    let mut imag : Nat := 0
+    for i in [0:leftLength] do
+      if i <= k && k - i < rightLength then
+        let x := left i
+        let y := right (k - i)
+        real := real + x.a.toNat * y.a.toNat + 2 * x.b.toNat * y.b.toNat
+        imag := imag + x.a.toNat * y.b.toNat + x.b.toNat * y.a.toNat
+    pure { a := u8Mod101 real, b := u8Mod101 imag }
+
+/-- One coefficient of a convolution.  The kernel-visible definition follows
+the finite-sum specification; compiled checkers use the equivalent one-pass
+accumulator above. -/
+@[implemented_by extConvolutionCoefficientFast]
+def extConvolutionCoefficient
+    (left : Nat → ExtElt) (leftLength : Nat)
+    (right : Nat → ExtElt) (rightLength k : Nat) : ExtElt :=
+  let totals := extConvolutionSums left right rightLength k leftLength
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
+
+private unsafe def RankCertificateFile.padeNumeratorFast
+    (cert : RankCertificateFile) : Array ExtElt :=
+  Id.run do
+    let mut numerator := Array.emptyWithCapacity cert.degree
+    for k in [0:cert.degree] do
+      numerator := numerator.push <|
+        extConvolutionCoefficient
+          (pairAt cert.coefficients) (cert.degree + 1)
+          (pairAt cert.moments) cert.bmTerms k
+    pure numerator
+
+/-- The low Padé numerator coefficients.  The specification is an indexed
+array; the compiled checker uses the allocation-efficient push loop. -/
+def RankCertificateFile.padeNumeratorCoefficient
+    (cert : RankCertificateFile) (k : Nat) : ExtElt :=
+  extConvolutionCoefficient
+    (pairAt cert.coefficients) (cert.degree + 1)
+    (pairAt cert.moments) cert.bmTerms k
+
+@[implemented_by RankCertificateFile.padeNumeratorFast]
+def RankCertificateFile.padeNumerator (cert : RankCertificateFile) : Array ExtElt :=
+  Array.ofFn (n := cert.degree) fun k =>
+    cert.padeNumeratorCoefficient k
+
+def PadeWitnessFile.bezoutCoefficient
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) (k : Nat) : ExtElt :=
+  let ud := extConvolutionCoefficient
+    (pairAt witness.uCoefficients) witness.uLength
+    (pairAt cert.coefficients) (cert.degree + 1) k
+  let vr := extConvolutionCoefficient
+    (pairAt witness.vCoefficients) witness.vLength
+    cert.padeNumeratorCoefficient cert.degree k
+  ud.add vr
+
+def padeBezoutExpected (k : Nat) : ExtElt :=
+  if k == 0 then { a := 1, b := 0 } else { a := 0, b := 0 }
+
+/-- Number of coefficients violating the checked identity `U*D + V*R = 1`,
+where `D` is the stored connection denominator and `R` is recomputed from the
+stored moments. -/
+private unsafe def PadeWitnessFile.bezoutBadFast
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) : Nat :=
+  Id.run do
+    let numerator := cert.padeNumerator
+    let mut bad := 0
+    for k in [0:2 * cert.degree] do
+      let ud := extConvolutionCoefficient
+        (pairAt witness.uCoefficients) witness.uLength
+        (pairAt cert.coefficients) (cert.degree + 1) k
+      let vr := extConvolutionCoefficient
+        (pairAt witness.vCoefficients) witness.vLength
+        (fun i => numerator[i]!) numerator.size k
+      let actual := ud.add vr
+      let expected := padeBezoutExpected k
+      if actual != expected then
+        bad := bad + 1
+    pure bad
+
+/-- Specification-shaped mismatch count.  The executable uses the equivalent
+allocation-efficient loop above. -/
+@[implemented_by PadeWitnessFile.bezoutBadFast]
+def PadeWitnessFile.bezoutBad
+    (witness : PadeWitnessFile) (cert : RankCertificateFile) : Nat :=
+  ((List.range (2 * cert.degree)).filter fun k =>
+    witness.bezoutCoefficient cert k != padeBezoutExpected k).length
+
 structure BMResult where
   degree : Nat
   coefficients : Array ExtElt
@@ -540,65 +833,51 @@ structure BMResult where
 def berlekampMassey (moments : ByteArray) (used : Nat) : ParseM BMResult := do
   require (2 * used <= moments.size) "not enough moments for BM replay"
   let capacity := used + 1
-  let mut cr := Array.replicate capacity (0 : UInt8)
-  let mut ci := Array.replicate capacity (0 : UInt8)
-  let mut br := Array.replicate capacity (0 : UInt8)
-  let mut bi := Array.replicate capacity (0 : UInt8)
-  let mut tr := Array.replicate capacity (0 : UInt8)
-  let mut ti := Array.replicate capacity (0 : UInt8)
-  cr := cr.set! 0 1
-  br := br.set! 0 1
+  let zero : ExtElt := { a := 0, b := 0 }
+  let one : ExtElt := { a := 1, b := 0 }
+  let mut connection := Array.replicate capacity zero
+  let mut previous := Array.replicate capacity zero
+  let mut saved := Array.replicate capacity zero
+  connection := connection.set! 0 one
+  previous := previous.set! 0 one
   let mut clen := 1
   let mut blen := 1
   let mut degree := 0
   let mut shift := 1
-  let mut discrepancyBase : ExtElt := { a := 1, b := 0 }
+  let mut discrepancyBase := one
   for n in [0:used] do
-    let s := pairAt moments n
-    let mut dr := s.a.toNat
-    let mut di := s.b.toNat
+    let mut discrepancy := pairAt moments n
     for i in [1:degree + 1] do
       let q := pairAt moments (n - i)
-      dr := dr + cr[i]!.toNat * q.a.toNat + 2 * ci[i]!.toNat * q.b.toNat
-      di := di + cr[i]!.toNat * q.b.toNat + ci[i]!.toNat * q.a.toNat
-    let d : ExtElt := { a := u8Mod101 dr, b := u8Mod101 di }
-    if d.isZero then
+      discrepancy := discrepancy.add (connection[i]!.mul q)
+    if discrepancy.isZero then
       shift := shift + 1
     else
       let jump := 2 * degree <= n
       let oldLength := clen
       if jump then
         for i in [0:clen] do
-          tr := tr.set! i cr[i]!
-          ti := ti.set! i ci[i]!
-      let coef ← d.div discrepancyBase
+          saved := saved.set! i connection[i]!
+      let coef ← discrepancy.div discrepancyBase
       let need := blen + shift
       if clen < need then
         clen := need
       for j in [0:blen] do
-        let pr := coef.a.toNat * br[j]!.toNat + 2 * coef.b.toNat * bi[j]!.toNat
-        let pi := coef.a.toNat * bi[j]!.toNat + coef.b.toNat * br[j]!.toNat
-        let rr := u8Mod101 pr
-        let ri := u8Mod101 pi
         let k := j + shift
-        cr := cr.set! k (u8SubMod101 cr[k]! rr)
-        ci := ci.set! k (u8SubMod101 ci[k]! ri)
+        connection := connection.set! k
+          (connection[k]!.sub (coef.mul previous[j]!))
       if jump then
         degree := n + 1 - degree
         for i in [0:oldLength] do
-          br := br.set! i tr[i]!
-          bi := bi.set! i ti[i]!
+          previous := previous.set! i saved[i]!
         blen := oldLength
-        discrepancyBase := d
+        discrepancyBase := discrepancy
         shift := 1
       else
         shift := shift + 1
   let mut coefficients := Array.emptyWithCapacity (degree + 1)
   for i in [0:degree + 1] do
-    coefficients := coefficients.push {
-      a := if i < clen then cr[i]! else 0,
-      b := if i < clen then ci[i]! else 0
-    }
+    coefficients := coefficients.push (if i < clen then connection[i]! else zero)
   pure { degree, coefficients }
 
 structure BMReplayCheck where
@@ -719,6 +998,43 @@ def rankSeedByteData (order : Nat) (seed : UInt64) : KrylovSeedByteData :=
       x := pushExtByteArray x xi
     pure { dR, dL, u, x, diagonalRejections, finalState := state }
 
+/-- Proof-shaped validation count for the four encoded vectors emitted by the
+seed expander. -/
+def KrylovSeedByteData.sizeBad (data : KrylovSeedByteData) (order : Nat) : Nat :=
+  (if data.dR.size = 2 * order then 0 else 1) +
+  (if data.dL.size = 2 * order then 0 else 1) +
+  (if data.u.size = 2 * order then 0 else 1) +
+  (if data.x.size = 2 * order then 0 else 1)
+
+private unsafe def encodedVectorCanonicalBadFast
+    (bytes : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for i in [0:count] do
+      let x := pairAt bytes i
+      if 101 ≤ x.a.toNat || 101 ≤ x.b.toNat then bad := bad + 1
+    pure bad
+
+/-- Number of encoded field coordinates not reduced to canonical bytes. -/
+@[implemented_by encodedVectorCanonicalBadFast]
+def encodedVectorCanonicalBad (bytes : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun i =>
+    let x := pairAt bytes i
+    decide (101 ≤ x.a.toNat ∨ 101 ≤ x.b.toNat)).length
+
+private unsafe def encodedVectorZeroBadFast
+    (bytes : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for i in [0:count] do
+      if (pairAt bytes i).isZero then bad := bad + 1
+    pure bad
+
+/-- Number of encoded coordinates equal to zero. -/
+@[implemented_by encodedVectorZeroBadFast]
+def encodedVectorZeroBad (bytes : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun i => (pairAt bytes i).isZero).length
+
 def rankSeedExpansionSummary (order : Nat) (seed : UInt64) :
     SeedExpansionSummary :=
   let data := rankSeedData order seed
@@ -734,7 +1050,17 @@ def extDot (u x : Array ExtElt) (n : Nat) : ExtElt :=
       ai := ai + p.b.toNat
     pure { a := u8Mod101 ar, b := u8Mod101 ai }
 
-def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
+def extDotByteSums (u x : ByteArray) : Nat → Nat × Nat
+  | 0 => (0, 0)
+  | i + 1 =>
+      let totals := extDotByteSums u x i
+      let j := 2 * i
+      (totals.1 + u[j]!.toNat * x[j]!.toNat +
+          2 * u[j + 1]!.toNat * x[j + 1]!.toNat,
+        totals.2 + u[j]!.toNat * x[j + 1]!.toNat +
+          u[j + 1]!.toNat * x[j]!.toNat)
+
+private unsafe def extDotBytesFast (u x : ByteArray) (n : Nat) : ExtElt :=
   Id.run do
     let mut ar := 0
     let mut ai := 0
@@ -747,6 +1073,85 @@ def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
       ar := ar + ua * xa + 2 * ub * xb
       ai := ai + ua * xb + ub * xa
     pure { a := u8Mod101 ar, b := u8Mod101 ai }
+
+/-- Encoded extension-field dot product.  The recursive specification is used
+in proofs; compiled certificate replay uses the one-pass accumulator. -/
+@[implemented_by extDotBytesFast]
+def extDotBytes (u x : ByteArray) (n : Nat) : ExtElt :=
+  let totals := extDotByteSums u x n
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
+
+/-- Natural-coordinate accumulator for one CSR row. -/
+def matrixRowEntry (matrixBytes : ByteArray) (header : MatrixHeader)
+    (row offset : Nat) : Nat :=
+  matrixRowStart matrixBytes header row + offset
+
+def matrixRowByteTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : ExtElt :=
+  let entry := matrixRowEntry matrixBytes header row offset
+  (pairAt x (matrixColumnAt matrixBytes header entry)).scale
+    (matrixValueAt matrixBytes header entry)
+
+def matrixRowByteRealTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : Nat :=
+  (matrixRowByteTerm matrixBytes header x row offset).a.toNat
+
+def matrixRowByteImagTerm (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row offset : Nat) : Nat :=
+  (matrixRowByteTerm matrixBytes header x row offset).b.toNat
+
+def matrixRowByteSums (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : Nat → Nat × Nat
+  | 0 => (0, 0)
+  | offset + 1 =>
+      let totals := matrixRowByteSums matrixBytes header x row offset
+      (totals.1 + matrixRowByteRealTerm matrixBytes header x row offset,
+        totals.2 + matrixRowByteImagTerm matrixBytes header x row offset)
+
+def matrixRowBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : ExtElt :=
+  let count := matrixRowStop matrixBytes header row -
+    matrixRowStart matrixBytes header row
+  let totals := matrixRowByteSums matrixBytes header x row count
+  { a := u8Mod101 totals.1, b := u8Mod101 totals.2 }
+
+/-- Specification of a normal (unbordered) row of `M - 50I`. -/
+def matrixApplyShiftedNormalRow (matrixBytes : ByteArray) (header : MatrixHeader)
+    (x : ByteArray) (row : Nat) : ExtElt :=
+  (matrixRowBytes matrixBytes header x row).sub ((pairAt x row).scale 50)
+
+/-- Specification of a top row of the bordered operator
+`[M - 50I, v; pivot, 0]`. -/
+def matrixApplyShiftedBorderRow (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) (row : Nat) : ExtElt :=
+  ((matrixRowBytes matrixBytes header x row).add
+    ((pairAt x header.n).scale (eigenValueAt eig row))).sub
+      ((pairAt x row).scale 50)
+
+/-- Encode a prime-field eigenvector as extension-field byte pairs. -/
+def eigenPairBytes (eig : EigenvectorFile) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | n + 1 => pushExtByteArray (eigenPairBytes eig n)
+      { a := eig.values[n]!, b := 0 }
+
+private unsafe def eigenResidualMismatchCountFast
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) : Nat :=
+  Id.run do
+    let x := eigenPairBytes eig header.n
+    let mut bad := 0
+    for row in [0:header.n] do
+      if !(matrixApplyShiftedNormalRow matrixBytes header x row).isZero then
+        bad := bad + 1
+    pure bad
+
+/-- Proof-shaped count of nonzero rows of `(M - 50I)v`. -/
+@[implemented_by eigenResidualMismatchCountFast]
+def eigenResidualMismatchCount (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) : Nat :=
+  let x := eigenPairBytes eig header.n
+  ((List.range header.n).filter fun row =>
+    (matrixApplyShiftedNormalRow matrixBytes header x row).isZero != true).length
 
 def matrixApplyShifted (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : Array ExtElt) : ParseM (Array ExtElt) := do
@@ -794,13 +1199,29 @@ def mulArrays (a b : Array ExtElt) : Array ExtElt :=
       out := out.push (a[i]!.mul b[i]!)
     pure out
 
-def mulByteVectors (a b : ByteArray) (n : Nat) : ParseM ByteArray := do
+def pointwiseProductBytes (a b : ByteArray) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | n + 1 =>
+      pushExtByteArray (pointwiseProductBytes a b n)
+        ((pairAt a n).mul (pairAt b n))
+
+private unsafe def mulByteVectorsFast (a b : ByteArray) (n : Nat) : ParseM ByteArray := do
   require (a.size == 2 * n) "left byte vector has wrong dimension"
   require (b.size == 2 * n) "right byte vector has wrong dimension"
   let mut out := ByteArray.emptyWithCapacity (2 * n)
   for i in [0:n] do
     out := pushExtByteArray out ((pairAt a i).mul (pairAt b i))
   pure out
+
+/-- Pairwise extension-field multiplication.  Proofs see the recursive byte
+layout; compiled replay uses the allocation-efficient loop. -/
+@[implemented_by mulByteVectorsFast]
+def mulByteVectors (a b : ByteArray) (n : Nat) : ParseM ByteArray :=
+  if a.size == 2 * n then
+    if b.size == 2 * n then
+      .ok (pointwiseProductBytes a b n)
+    else .error "right byte vector has wrong dimension"
+  else .error "left byte vector has wrong dimension"
 
 def matrixApplyShiftedBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (x : ByteArray) : ParseM ByteArray := do
@@ -839,12 +1260,161 @@ def matrixApplyShiftedBytes (matrixBytes : ByteArray) (header : MatrixHeader)
       let pivotPair := 2 * eig.pivot
       pure ((y.push x[pivotPair]!).push x[pivotPair + 1]!)
 
+def matrixApplyShiftedNormalBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    Nat → ByteArray
+  | 0 => ByteArray.empty
+  | row + 1 =>
+      pushExtByteArray
+        (matrixApplyShiftedNormalBytesData matrixBytes header x row)
+        (matrixApplyShiftedNormalRow matrixBytes header x row)
+
+def matrixApplyShiftedBorderBytesData
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : Nat → ByteArray
+  | 0 => ByteArray.empty
+  | row + 1 =>
+      pushExtByteArray
+        (matrixApplyShiftedBorderBytesData matrixBytes header eig x row)
+        (matrixApplyShiftedBorderRow matrixBytes header eig x row)
+
+private def matrixApplyShiftedNormalBytesFast
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    ParseM ByteArray :=
+  matrixApplyShiftedBytes matrixBytes header none x
+
+/-- Specification-shaped normal sparse shifted application. -/
+@[implemented_by matrixApplyShiftedNormalBytesFast]
+def matrixApplyShiftedNormalBytes
+    (matrixBytes : ByteArray) (header : MatrixHeader) (x : ByteArray) :
+    ParseM ByteArray :=
+  if x.size == 2 * header.n then
+    .ok (matrixApplyShiftedNormalBytesData matrixBytes header x header.n)
+  else .error "byte operator vector has wrong dimension"
+
+private def matrixApplyShiftedBorderBytesFast
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ParseM ByteArray :=
+  matrixApplyShiftedBytes matrixBytes header (some eig) x
+
+/-- Specification-shaped bordered sparse shifted application. -/
+@[implemented_by matrixApplyShiftedBorderBytesFast]
+def matrixApplyShiftedBorderBytes
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ParseM ByteArray :=
+  if x.size == 2 * (header.n + 1) then
+    if eig.n == header.n then
+      if eig.pivot < header.n then
+        .ok (pushExtByteArray
+          (matrixApplyShiftedBorderBytesData matrixBytes header eig x header.n)
+          (pairAt x eig.pivot))
+      else .error "border eigenvector pivot out of range"
+    else .error "border eigenvector dimension does not match matrix"
+  else .error "byte operator vector has wrong dimension"
+
 def krylovStepBytes (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : ByteArray) (order : Nat) :
     ParseM ByteArray := do
   let dx ← mulByteVectors dR x order
-  let y ← matrixApplyShiftedBytes matrixBytes header eig? dx
+  let y ← match eig? with
+    | none => matrixApplyShiftedNormalBytes matrixBytes header dx
+    | some eig => matrixApplyShiftedBorderBytes matrixBytes header eig dx
   mulByteVectors dL y order
+
+/-- Canonical total byte orbit for a normal certificate.  This exposes the
+three successful operations hidden behind `krylovStepBytes`: right diagonal
+multiplication, shifted CSR application, and left diagonal multiplication. -/
+def normalKrylovOrbitBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (dR dL initial : ByteArray) : Nat → ByteArray
+  | 0 => initial
+  | k + 1 =>
+      pointwiseProductBytes dL
+        (matrixApplyShiftedNormalBytesData matrixBytes header
+          (pointwiseProductBytes dR
+            (normalKrylovOrbitBytes matrixBytes header dR dL initial k)
+            header.n)
+          header.n)
+        header.n
+
+private unsafe def RankCertificateFile.normalKrylovMismatchCountFast
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (dR dL probe initial : ByteArray)
+    (count : Nat) : Nat :=
+  Id.run do
+    let mut x := initial
+    let mut bad := 0
+    for k in [0:count] do
+      if pairAt cert.moments k != extDotBytes probe x header.n then
+        bad := bad + 1
+      if k + 1 < count then
+        let dx := pointwiseProductBytes dR x header.n
+        let y := matrixApplyShiftedNormalBytesData matrixBytes header dx header.n
+        x := pointwiseProductBytes dL y header.n
+    pure bad
+
+/-- Number of stored moments that disagree with the canonical normal byte
+orbit over the requested prefix.  Proofs see the explicit finite filter;
+compiled checks use the allocation-efficient single-pass replay. -/
+@[implemented_by RankCertificateFile.normalKrylovMismatchCountFast]
+def RankCertificateFile.normalKrylovMismatchCount
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (dR dL probe initial : ByteArray)
+    (count : Nat) : Nat :=
+  ((List.range count).filter fun k =>
+    pairAt cert.moments k !=
+      extDotBytes probe
+        (normalKrylovOrbitBytes matrixBytes header dR dL initial k)
+        header.n).length
+
+/-- Total value returned by a successful bordered sparse application. -/
+def matrixApplyShiftedBorderBytesValue
+    (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (x : ByteArray) : ByteArray :=
+  pushExtByteArray
+    (matrixApplyShiftedBorderBytesData matrixBytes header eig x header.n)
+    (pairAt x eig.pivot)
+
+/-- Canonical total byte orbit for the bordered certificate. -/
+def borderKrylovOrbitBytes (matrixBytes : ByteArray) (header : MatrixHeader)
+    (eig : EigenvectorFile) (dR dL initial : ByteArray) : Nat → ByteArray
+  | 0 => initial
+  | k + 1 =>
+      pointwiseProductBytes dL
+        (matrixApplyShiftedBorderBytesValue matrixBytes header eig
+          (pointwiseProductBytes dR
+            (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+            (header.n + 1)))
+        (header.n + 1)
+
+private unsafe def RankCertificateFile.borderKrylovMismatchCountFast
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL probe initial : ByteArray) (count : Nat) : Nat :=
+  Id.run do
+    let order := header.n + 1
+    let mut x := initial
+    let mut bad := 0
+    for k in [0:count] do
+      if pairAt cert.moments k != extDotBytes probe x order then
+        bad := bad + 1
+      if k + 1 < count then
+        let dx := pointwiseProductBytes dR x order
+        let y := matrixApplyShiftedBorderBytesValue matrixBytes header eig dx
+        x := pointwiseProductBytes dL y order
+    pure bad
+
+/-- Number of stored moments that disagree with the canonical bordered byte
+orbit over the requested prefix. -/
+@[implemented_by RankCertificateFile.borderKrylovMismatchCountFast]
+def RankCertificateFile.borderKrylovMismatchCount
+    (cert : RankCertificateFile) (matrixBytes : ByteArray)
+    (header : MatrixHeader) (eig : EigenvectorFile)
+    (dR dL probe initial : ByteArray) (count : Nat) : Nat :=
+  ((List.range count).filter fun k =>
+    pairAt cert.moments k !=
+      extDotBytes probe
+        (borderKrylovOrbitBytes matrixBytes header eig dR dL initial k)
+        (header.n + 1)).length
 
 def krylovStep (matrixBytes : ByteArray) (header : MatrixHeader)
     (eig? : Option EigenvectorFile) (dR dL x : Array ExtElt) :
@@ -915,9 +1485,39 @@ moment must satisfy the stored full-degree connection polynomial.
 def RankCertificateFile.extraRecurrenceBad (cert : RankCertificateFile) : Nat :=
   cert.recurrenceBadInRange cert.bmTerms cert.terms
 
+def RankCertificateFile.recurrenceCoefficient
+    (cert : RankCertificateFile) (n : Nat) : ExtElt :=
+  extConvolutionCoefficient
+    (pairAt cert.coefficients) (cert.degree + 1)
+    (pairAt cert.moments) cert.terms n
+
+private unsafe def RankCertificateFile.fullRecurrenceBadFast
+    (cert : RankCertificateFile) : Nat :=
+  Id.run do
+    let mut bad := 0
+    for n in [cert.degree:cert.bmTerms] do
+      if (cert.recurrenceCoefficient n).isZero != true then
+        bad := bad + 1
+    pure bad
+
+/-- Every middle coefficient of the stored moment/denominator product must
+vanish.  Unlike the 32-position smoke checks, this is the full recurrence
+premise consumed by the Padé proof. -/
+@[implemented_by RankCertificateFile.fullRecurrenceBadFast]
+def RankCertificateFile.fullRecurrenceBad (cert : RankCertificateFile) : Nat :=
+  ((List.range (cert.bmTerms - cert.degree)).filter fun offset =>
+    (cert.recurrenceCoefficient (cert.degree + offset)).isZero != true).length
+
 def RankCertificateFile.connectionLeadingCoefficient (cert : RankCertificateFile) :
     ExtElt :=
   pairAt cert.coefficients 0
+
+/-- The BM array is stored in descending recurrence order, so entry `degree`
+is the polynomial's constant coefficient.  This is the coefficient whose
+nonvanishing certifies nonsingularity. -/
+def RankCertificateFile.connectionConstantCoefficient (cert : RankCertificateFile) :
+    ExtElt :=
+  pairAt cert.coefficients cert.degree
 
 def fnv64Bytes (bytes : ByteArray) : UInt64 :=
   let offsetBasis : UInt64 := 1469598103934665603

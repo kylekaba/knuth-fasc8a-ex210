@@ -1,170 +1,158 @@
+import Mathlib.Data.ZMod.Basic
+import Mathlib.RingTheory.Multiplicity
+import Mathlib.RingTheory.Polynomial.GaussLemma
+
 /-!
-# Knuth Fascicle 8A, Exercise 210: width-5 certificate core
+# Knuth Fascicle 8A, Exercise 210: width-5 contradiction
 
-This file formalizes the small logical core of the counterexample described in
-the repository `kylekaba/knuth-fasc8a-ex210`.
+This file formalizes the algebraic bridge from the width-5 certificate facts
+to the failure of cubic divisibility. Unlike the certificate-file executable,
+the objects here are actual polynomials:
 
-The large external checkers establish the following facts modulo 101 for the
-linear factor `1 - 50 z`:
+* the normalized denominators and transfer determinant lie in `ℤ[X]`;
+* the conjectured divisibility is stated in `ℚ[X]`;
+* the decisive factor is `1 - 50X` in `(ZMod 101)[X]`.
 
-* the closed denominator has at least one visible copy of the factor;
-* the open-side transfer determinant has exactly two copies of the factor;
-* the open denominator divides that transfer determinant.
+Mathlib's Gauss lemma moves a hypothetical rational divisibility back to
+`ℤ[X]`. Mapping coefficients modulo 101 then contradicts the certified fact
+that the open transfer determinant contains exactly two copies of `1 - 50X`.
 
-Lean checks here that these facts are incompatible with the proposed cubic
-divisibility `Q_5(z)^3 | Q_5^+(z)`, and therefore with the universal claim.
+The expensive matrix and certificate checks live in `CertificateFiles.lean`
+and `CertCheck.lean`; as an `IO` program, that checker does not construct a
+proof term of `WidthFiveCertificate`.
 -/
 
 namespace KnuthFasc8aEx210
 
-universe u
+open Polynomial
 
-/-- The modular linear factor `1 - eigenvalue * z` over `Z/modulus Z`. -/
-structure ModularLinearFactor where
-  modulus : Nat
-  eigenvalue : Nat
-deriving DecidableEq, Repr
+noncomputable section
 
-/-- The factor singled out by the repository certificate: `1 - 50 z` modulo 101. -/
-def visibleFactor : ModularLinearFactor where
-  modulus := 101
-  eigenvalue := 50
+/-- The field used by the width-5 certificate. -/
+abbrev F101 := ZMod 101
 
-/--
-The concrete multiplicity summary produced by the external certificate.
+/-- Integer, rational, and mod-101 polynomial types used in the bridge. -/
+abbrev IntegerPolynomial := Polynomial ℤ
+abbrev RationalPolynomial := Polynomial ℚ
+abbrev ModPolynomial := Polynomial F101
 
-`closedDenominatorCopies = 1` records the visible copy in the closed
-denominator. `openTransferCopies = 2` records the exact multiplicity in the
-open-side transfer determinant `det(I - zT) det(I - zU) det(I - zW_rel)`.
--/
-structure MultiplicitySummary where
-  width : Nat
-  factor : ModularLinearFactor
-  closedDenominatorCopies : Nat
-  openTransferCopies : Nat
-deriving Repr
+/-- Coefficientwise reduction of an integer polynomial modulo 101. -/
+def reduce101 (p : IntegerPolynomial) : ModPolynomial :=
+  p.map (Int.castRingHom F101)
 
-/-- The width-5 numerical summary from the repository proof. -/
-def repositorySummary : MultiplicitySummary where
-  width := 5
-  factor := visibleFactor
-  closedDenominatorCopies := 1
-  openTransferCopies := 2
+/-- Coefficientwise inclusion of an integer polynomial into `ℚ[X]`. -/
+def toRational (p : IntegerPolynomial) : RationalPolynomial :=
+  p.map (Int.castRingHom ℚ)
 
-/--
-Necessary multiplicity test for cubic divisibility at a chosen factor.
+/-- The concrete linear factor detected by the certificate: `1 - 50X`. -/
+def visibleFactor : ModPolynomial :=
+  1 - C 50 * X
 
-If `Q_m(z)^3` divides `Q_m^+(z)`, and the open denominator divides an open-side
-transfer determinant, then the determinant must contain at least three times as
-many copies of every factor visible in `Q_m(z)`.
--/
-def CubicMultiplicityTest (summary : MultiplicitySummary) : Prop :=
-  3 * summary.closedDenominatorCopies <= summary.openTransferCopies
+/-- In `F_101`, `1 - 50X` is a unit multiple of `X - 99`. -/
+theorem visibleFactor_eq_unit_mul_X_sub_C :
+    visibleFactor = C (-50 : F101) * (X - C 99) := by
+  rw [visibleFactor, mul_sub, ← C_mul]
+  have h : (-50 : F101) * 99 = -1 := by native_decide
+  rw [h]
+  simp
+  ring
 
-/-- The repository witness has width at least five. -/
-theorem repository_width_ge_five : 5 <= repositorySummary.width := by
-  decide
+/-- Powers of a primitive integer polynomial remain primitive. -/
+theorem isPrimitive_pow {p : IntegerPolynomial} (hp : p.IsPrimitive) :
+    ∀ n : Nat, (p ^ n).IsPrimitive
+  | 0 => by simp [Polynomial.isPrimitive_one]
+  | n + 1 => by
+      rw [pow_succ]
+      exact (isPrimitive_pow hp n).mul hp
 
-/-- The concrete arithmetic obstruction: three visible copies cannot fit into two. -/
-theorem repository_cubic_multiplicity_test_fails :
-    Not (CubicMultiplicityTest repositorySummary) := by
-  unfold CubicMultiplicityTest repositorySummary
-  decide
+/-- An integer polynomial with constant coefficient one is primitive. -/
+theorem isPrimitive_of_coeff_zero_eq_one {p : IntegerPolynomial}
+    (constant_one : p.coeff 0 = 1) : p.IsPrimitive := by
+  rw [Polynomial.isPrimitive_iff_isUnit_of_C_dvd]
+  intro r constant_dvd
+  apply isUnit_iff_dvd_one.mpr
+  rw [← constant_one]
+  exact (Polynomial.C_dvd_iff_dvd_coeff r p).mp constant_dvd 0
 
 /--
-An abstract interface for a single-factor multiplicity valuation.
+The algebraic facts supplied by the mathematical width-5 certificate.
 
-This avoids trusting any polynomial implementation here. The theorem below only
-needs two standard properties of such a valuation:
+The first two fields record the constant-term-one normalization used in
+`PROOF.md`; Lean derives primitiveness from that normalization.
+The remaining fields are the three facts used in the contradiction:
 
-* divisibility cannot decrease multiplicity;
-* the multiplicity of `a^n` is `n` times the multiplicity of `a`.
+* `1 - 50X` divides the reduced closed denominator;
+* the integer open denominator divides the integer transfer determinant;
+* `1 - 50X` has multiplicity exactly two in the reduced determinant.
 -/
-structure FactorArithmetic (alpha : Type u) where
-  divides : alpha -> alpha -> Prop
-  pow : alpha -> Nat -> alpha
-  multiplicity : alpha -> Nat
-  divides_trans :
-    forall {a b c : alpha}, divides a b -> divides b c -> divides a c
-  multiplicity_mono :
-    forall {a b : alpha}, divides a b -> multiplicity a <= multiplicity b
-  multiplicity_pow :
-    forall (a : alpha) (n : Nat), multiplicity (pow a n) = n * multiplicity a
-
-/--
-The certificate facts needed at width 5, stated for arbitrary polynomial-like
-objects equipped with a single-factor multiplicity valuation.
--/
-structure WidthFiveCertificate (alpha : Type u) where
-  arithmetic : FactorArithmetic alpha
-  closedDenominator : alpha
-  openDenominator : alpha
-  openTransferDeterminant : alpha
+structure WidthFiveCertificate where
+  closedDenominator : IntegerPolynomial
+  openDenominator : IntegerPolynomial
+  openTransferDeterminant : IntegerPolynomial
+  closed_constant_one : closedDenominator.coeff 0 = 1
+  open_constant_one : openDenominator.coeff 0 = 1
   closed_factor_visible :
-    1 <= arithmetic.multiplicity closedDenominator
-  open_transfer_multiplicity_two :
-    arithmetic.multiplicity openTransferDeterminant = 2
+    visibleFactor ∣ reduce101 closedDenominator
   open_denominator_divides_transfer :
-    arithmetic.divides openDenominator openTransferDeterminant
+    openDenominator ∣ openTransferDeterminant
+  open_transfer_multiplicity_two :
+    emultiplicity visibleFactor (reduce101 openTransferDeterminant) = 2
 
-/-- The proposed width-5 divisibility `Q_5(z)^3 | Q_5^+(z)`. -/
-def CubicDivisibilityAtWidthFive {alpha : Type u}
-    (cert : WidthFiveCertificate alpha) : Prop :=
-  cert.arithmetic.divides
-    (cert.arithmetic.pow cert.closedDenominator 3)
-    cert.openDenominator
+/-- The conjectured width-5 divisibility, stated in the intended ring `ℚ[X]`. -/
+def CubicDivisibilityAtWidthFive (cert : WidthFiveCertificate) : Prop :=
+  toRational cert.closedDenominator ^ 3 ∣ toRational cert.openDenominator
+
+/-- Multiplicity two rules out a third copy of the visible factor. -/
+theorem WidthFiveCertificate.visible_factor_cube_not_dvd_transfer
+    (cert : WidthFiveCertificate) :
+    Not (visibleFactor ^ 3 ∣ reduce101 cert.openTransferDeterminant) := by
+  apply not_pow_dvd_of_emultiplicity_lt
+  rw [cert.open_transfer_multiplicity_two]
+  norm_num
 
 /--
-The certified contradiction.
+The certified width-5 contradiction over actual polynomial rings.
 
-The visible closed factor supplies at least one copy. Cubing would require at
-least three copies in the open determinant, but the certificate says the open
-determinant has exactly two.
+A hypothetical divisibility in `ℚ[X]` descends to `ℤ[X]` by Gauss's lemma
+because both normalized denominators are primitive. It then survives reduction
+modulo 101. The visible factor in the closed denominator would therefore occur
+at least three times in the transfer determinant, contradicting its certified
+multiplicity two.
 -/
-theorem WidthFiveCertificate.not_cubic_divisibility {alpha : Type u}
-    (cert : WidthFiveCertificate alpha) :
+theorem WidthFiveCertificate.not_cubic_divisibility
+    (cert : WidthFiveCertificate) :
     Not (CubicDivisibilityAtWidthFive cert) := by
-  intro h_cubic
-  have h_pow_divides_det :
-      cert.arithmetic.divides
-        (cert.arithmetic.pow cert.closedDenominator 3)
-        cert.openTransferDeterminant :=
-    cert.arithmetic.divides_trans
-      h_cubic
-      cert.open_denominator_divides_transfer
-  have h_pow_le_det :
-      cert.arithmetic.multiplicity
-          (cert.arithmetic.pow cert.closedDenominator 3)
-        <= cert.arithmetic.multiplicity cert.openTransferDeterminant :=
-    cert.arithmetic.multiplicity_mono h_pow_divides_det
-  have h_three_le_det :
-      3 <= cert.arithmetic.multiplicity cert.openTransferDeterminant := by
-    calc
-      3 = 3 * 1 := by
-        decide
-      _ <= 3 * cert.arithmetic.multiplicity cert.closedDenominator :=
-        Nat.mul_le_mul_left 3 cert.closed_factor_visible
-      _ = cert.arithmetic.multiplicity
-          (cert.arithmetic.pow cert.closedDenominator 3) := by
-        exact (cert.arithmetic.multiplicity_pow cert.closedDenominator 3).symm
-      _ <= cert.arithmetic.multiplicity cert.openTransferDeterminant :=
-        h_pow_le_det
-  rw [cert.open_transfer_multiplicity_two] at h_three_le_det
-  exact repository_cubic_multiplicity_test_fails h_three_le_det
+  intro rational_dvd
+  have integer_dvd :
+      cert.closedDenominator ^ 3 ∣ cert.openDenominator := by
+    apply (Polynomial.IsPrimitive.Int.dvd_iff_map_cast_dvd_map_cast
+      (cert.closedDenominator ^ 3) cert.openDenominator
+      (isPrimitive_pow
+        (isPrimitive_of_coeff_zero_eq_one cert.closed_constant_one) 3)
+      (isPrimitive_of_coeff_zero_eq_one cert.open_constant_one)).mpr
+    rw [Polynomial.map_pow]
+    exact rational_dvd
+  have integer_dvd_transfer :
+      cert.closedDenominator ^ 3 ∣ cert.openTransferDeterminant :=
+    integer_dvd.trans cert.open_denominator_divides_transfer
+  have reduced_dvd_transfer :
+      reduce101 cert.closedDenominator ^ 3 ∣
+        reduce101 cert.openTransferDeterminant := by
+    simpa [reduce101, Polynomial.map_pow] using
+      Polynomial.map_dvd (Int.castRingHom F101) integer_dvd_transfer
+  exact cert.visible_factor_cube_not_dvd_transfer
+    ((pow_dvd_pow_of_dvd cert.closed_factor_visible 3).trans
+      reduced_dvd_transfer)
 
-/--
-Any universal statement implying the width-5 divisibility is false.
-
-The bridge hypothesis lets callers connect their own formalization of
-"`Q_m(z)^3` divides `Q_m^+(z)`" to the certificate interface above.
--/
-theorem not_universal_claim_from_width_five {alpha : Type u}
-    (cert : WidthFiveCertificate alpha)
+/-- Any universal claim that implies the concrete width-5 divisibility is false. -/
+theorem not_universal_claim_from_width_five
+    (cert : WidthFiveCertificate)
     (ClaimAtWidth : Nat -> Prop)
-    (bridge :
-      ClaimAtWidth 5 -> CubicDivisibilityAtWidthFive cert) :
+    (bridge : ClaimAtWidth 5 -> CubicDivisibilityAtWidthFive cert) :
     Not (forall m, 5 <= m -> ClaimAtWidth m) := by
-  intro h_universal
-  exact cert.not_cubic_divisibility (bridge (h_universal 5 (by decide)))
+  intro universal
+  exact cert.not_cubic_divisibility (bridge (universal 5 (by decide)))
+
+end
 
 end KnuthFasc8aEx210
